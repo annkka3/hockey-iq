@@ -2,7 +2,7 @@
    Встроенный пакет core лежит в data/content.json; пакеты команды и «мои моменты» потом
    добавляются в тот же список через addPack — движок не различает их по происхождению. */
 
-export const lib = { cards: [], byId: {}, decks: [], phases: [], principles: [], principle: {}, phase: {}, built: '' };
+export const lib = { plays: [], cards: [], byId: {}, decks: [], phases: [], principles: [], principle: {}, phase: {}, built: '' };
 
 export async function loadContent() {
   const data = window.__HK_CONTENT || await (await fetch('data/content.json', { cache: 'no-cache' })).json();
@@ -10,6 +10,7 @@ export async function loadContent() {
   lib.phases = data.phases;
   lib.principles = data.principles;
   lib.built = data.built;
+  lib.plays = data.plays || [];
   for (const p of data.principles) lib.principle[p.id] = p;
   for (const p of data.phases) lib.phase[p.id] = p;
   addPack(data.cards, 'core');

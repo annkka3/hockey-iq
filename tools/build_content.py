@@ -36,6 +36,43 @@ def on_ice(x, y, m=0.4):
     return True
 
 
+def check_steps(cid, steps, ents, depth=0):
+    for st in steps:
+        if 'pause' in st:
+            p = st['pause']
+            if not p.get('question'): err(cid, 'пауза без вопроса')
+            opts = p.get('options', [])
+            if len(opts) < 2: err(cid, 'в паузе меньше двух вариантов')
+            if not any(o.get('correct') for o in opts): err(cid, 'в паузе нет верного варианта')
+            for o in opts:
+                if not o.get('label') or not o.get('explain'): err(cid, 'вариант паузы без текста или объяснения')
+                if o.get('then'): check_steps(cid, o['then'], ents, depth + 1)
+        else:
+            for mv in st.get('moves', []):
+                if mv['who'] not in ents: err(cid, f'ход: нет игрока {mv["who"]}')
+                elif not on_ice(*mv['to'], 0.2): err(cid, f'ход {mv["who"]} за бортом {mv["to"]}')
+
+
+def build_plays(principles, phases):
+    plays, seen = [], set()
+    for path in sorted(glob.glob(os.path.join(SRC, 'plays', '*.json'))):
+        for p in json.load(open(path, encoding='utf-8')):
+            pid = p.get('id', '?')
+            if pid in seen: err(pid, 'повтор id розыгрыша')
+            seen.add(pid)
+            for f in ('title', 'line', 'principle', 'steps', 'us'):
+                if f not in p: err(pid, f'нет поля {f}')
+            if p.get('principle') not in principles: err(pid, f'неизвестный принцип {p.get("principle")}')
+            if p.get('kind', 'film') not in ('film', 'branch'): err(pid, 'kind: film или branch')
+            ents = {e['id']: e for e in p.get('us', []) + p.get('them', [])}
+            for e in ents.values():
+                if not on_ice(e['x'], e['y']): err(pid, f'{e["id"]} вне льда')
+            if p.get('puck'): ents['puck'] = p['puck']
+            check_steps(pid, p.get('steps', []), ents)
+            plays.append(p)
+    return plays
+
+
 def main():
     content = json.load(open(os.path.join(SRC, 'content.json'), encoding='utf-8'))
     decks = {d['id'] for d in content['decks']}
@@ -123,7 +160,8 @@ def main():
         print(f'Сборка остановлена: {len(errors)} ошибок.')
         sys.exit(1)
 
-    out = {'version': max(c['version'] for c in cards) if cards else 0, 'built': None, **content, 'cards': cards}
+    plays = build_plays(principles, phases)
+    out = {'plays': plays, 'version': max(c['version'] for c in cards) if cards else 0, 'built': None, **content, 'cards': cards}
     stamp = hashlib.md5(json.dumps(cards, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:8]
     out['built'] = stamp
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
@@ -131,6 +169,7 @@ def main():
         json.dump(out, f, ensure_ascii=False, separators=(',', ':'))
     by = {}
     for c in cards: by[c['deck']] = by.get(c['deck'], 0) + 1
+    print(f'Розыгрышей: {len(out["plays"])}')
     print(f'Готово: {len(cards)} карточек ' + ', '.join(f'{k} {v}' for k, v in by.items()) + f' → data/content.json')
 
 

@@ -435,3 +435,17 @@ input[type=range] { width: 100%; accent-color: var(--cyan); height: 28px; }
 .fo-pad.drop { box-shadow: 0 0 0 3px var(--cyan) inset; }
 .fo-pad.hit { box-shadow: 0 0 0 4px var(--good) inset, 0 0 40px -6px rgba(46, 229, 157, 0.7); }
 .fo-pad.foul { box-shadow: 0 0 0 4px var(--bad) inset; }
+
+/* ---------- Разборы ---------- */
+.film-strip { display: grid; grid-auto-flow: column; grid-auto-columns: 74%; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 6px; margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+.film-strip::-webkit-scrollbar { display: none; }
+.film-card { scroll-snap-align: start; text-align: left; padding: 14px; border-radius: 18px; border: 1px solid var(--stroke); cursor: pointer; display: grid; gap: 6px; align-content: start;
+  background: linear-gradient(160deg, rgba(63, 215, 255, 0.14), rgba(14, 26, 43, 0.9) 55%); }
+.film-thumb { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: var(--cyan); border: 1px solid var(--stroke-hi); }
+.film-thumb svg { width: 22px; height: 22px; }
+.film-t { font-family: var(--display); font-weight: 700; font-size: 15px; line-height: 1.25; }
+.film-s { font-size: 13px; color: var(--muted); }
+.film-card .badge { justify-self: start; }
+.film-cap { margin-top: 12px; min-height: 48px; font-size: 15px; font-weight: 600; padding: 10px 14px; border-radius: 14px; background: var(--panel); border-left: 3px solid var(--cyan); }
+.film-cap.in { animation: rise .3s ease; }
+.film-q { font-family: var(--display); font-weight: 700; font-size: 16px; margin-top: 14px; }

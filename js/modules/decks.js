@@ -4,6 +4,7 @@ import { lib, keysOf, cardsOfDeck } from '../content.js';
 import { state } from '../core/state.js';
 import { buildQueue, isLearned } from '../engine/srs.js';
 import { play } from './play.js';
+import * as film from './film.js';
 
 const DECK_ICON = { 'no-puck': 'noPuck', 'with-puck': 'puck', faceoff: 'faceoff', special: 'shield', mine: 'stick' };
 
@@ -20,6 +21,9 @@ export function render(view, rerender) {
       h('div.grow', h('div.nm', d.name), h('div.ln', d.line), meter(keys.length ? learned / keys.length : 0)),
       h('div.cnt', `${learned}/${keys.length}`)));
   }
+
+  film.list(view, rerender, { title: 'Разборы розыгрышей', kind: 'film' });
+  film.list(view, rerender, { title: 'На два хода вперёд', kind: 'branch' });
 
   view.append(h('div.h2', 'Режим матча'),
     h('div.panel',
