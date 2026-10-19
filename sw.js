@@ -2,7 +2,7 @@
    Страница, скрипты, стили и контент — сначала сеть (обновления приходят сразу), без сети — из кэша.
    Шрифты, иконки, библиотеки — сначала кэш. Трафик Firebase не трогаем.
    Префикс кэша свой (hk-): на домене annkka3.github.io живут и другие приложения, их кэши не задеваем. */
-const VERSION = 'v5';
+const VERSION = 'v6';
 const PREFIX = 'hk-shell-';
 const CACHE = PREFIX + VERSION;
 const CORE = [
@@ -10,7 +10,7 @@ const CORE = [
   'js/main.js', 'js/ui.js', 'js/content.js',
   'js/core/state.js', 'js/core/sync.js',
   'js/engine/rink.js', 'js/engine/render.js', 'js/engine/anim.js', 'js/engine/srs.js', 'js/engine/scoring.js', 'js/engine/shot.js',
-  'js/modules/today.js', 'js/modules/decks.js', 'js/modules/play.js', 'js/modules/me.js', 'js/modules/parent.js', 'js/modules/soon.js', 'js/modules/shot.js', 'js/modules/react.js', 'js/modules/editor.js', 'js/modules/film.js',
+  'js/modules/today.js', 'js/modules/decks.js', 'js/modules/play.js', 'js/modules/me.js', 'js/modules/parent.js', 'js/modules/soon.js', 'js/modules/shot.js', 'js/modules/react.js', 'js/modules/editor.js', 'js/modules/film.js', 'js/modules/cards.js',
   'data/content.json', 'fonts/Unbounded.woff2', 'fonts/Manrope.woff2',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];
@@ -40,7 +40,7 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return; // Firebase и всё внешнее — мимо кэша
-  const cacheFirst = /\/(icons|vendor|fonts)\//.test(url.pathname);
+  const cacheFirst = /\/(icons|vendor|fonts|img)\//.test(url.pathname);
   if (cacheFirst) {
     e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => put(req, res))));
     return;

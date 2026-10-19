@@ -11,6 +11,7 @@ import * as parent from './modules/parent.js';
 import * as soon from './modules/soon.js';
 import * as shot from './modules/shot.js';
 import * as react from './modules/react.js';
+import * as cards from './modules/cards.js';
 
 const TABS = [
   ['today', 'Сегодня'], ['decks', 'Решения'], ['shot', 'Бросок'], ['react', 'Реакция'], ['me', 'Я'],
@@ -52,6 +53,10 @@ function render() {
       svg(ICONS[id]), label, locked ? h('span.lock', icon('lock')) : null));
   }
   app.append(nav);
+  if (state.meta.onboarded && !document.querySelector('.play, .reveal-back')) {
+    const fresh = cards.checkAwards();
+    if (fresh.length) cards.reveal(fresh, () => render());
+  }
 }
 
 function onboarding() {

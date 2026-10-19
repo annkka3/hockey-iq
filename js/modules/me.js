@@ -5,6 +5,7 @@ import { state, setProfile } from '../core/state.js';
 import { summarize, accuracyBy, medianTime } from '../engine/scoring.js';
 import { RINKS } from '../engine/rink.js';
 import { syncStatus } from '../core/sync.js';
+import * as cards from './cards.js';
 
 export function render(view, rerender, cloud) {
   const sum = summarize(state.sessions);
@@ -21,6 +22,8 @@ export function render(view, rerender, cloud) {
         h('div', h('b', sum.points), h('span', 'очков')),
         h('div', h('b', sum.streak), h('span', 'серия')),
         h('div', h('b', med ? (med / 1000).toFixed(1) + ' с' : '—'), h('span', 'на решение')))));
+
+  cards.collection(view);
 
   const acc = accuracyBy(state.sessions, 'principle');
   view.append(h('div.h2', 'Точность по принципам · 30 дней'), bars(lib.principles, acc));

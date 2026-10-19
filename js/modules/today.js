@@ -5,6 +5,7 @@ import { state } from '../core/state.js';
 import { summarize } from '../engine/scoring.js';
 import { buildQueue, today } from '../engine/srs.js';
 import { play } from './play.js';
+import * as cards from './cards.js';
 
 const cfg = () => (window.HK_CONFIG && window.HK_CONFIG.session) || { size: 10, maxNew: 5 };
 
@@ -65,6 +66,22 @@ export function render(view, rerender) {
       h('div.dn', ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'][k]),
       h('div', h('b', p.t), h('span', p.s)),
       k === wd ? h('button.btn.small', { onclick: () => { location.hash = p.go; } }, 'Начать') : dayDone(k) ? h('span', { style: { color: 'var(--good)' } }, '✓') : null))));
+
+  // Ближайшая карточка коллекции
+  {
+    const s = cards.stats(), aw = state.awards || {};
+    const locked = cards.PLAYERS.filter(p => !aw[p.id]);
+    const withProg = locked.map(p => ({ p, pr: p.prog ? p.prog(s) : null })).filter(x => x.pr && typeof x.pr[0] === 'number')
+      .sort((a, b) => b.pr[0] / b.pr[1] - a.pr[0] / a.pr[1]);
+    const nxt = (withProg[0] || { p: locked[0] }).p;
+    const opened = cards.PLAYERS.length - locked.length;
+    view.append(h('div.h2', `Коллекция · ${opened}/${cards.PLAYERS.length}`),
+      h('div.panel.next-card', { onclick: () => { location.hash = '#/me'; } },
+        nxt ? cards.cardEl(nxt, false) : null,
+        h('div.grow', h('div.muted.small', nxt ? 'Следующая: ' + cards.RARITY[nxt.rare].name.toLowerCase() : 'Все карточки собраны'),
+          h('b', nxt ? nxt.how : 'Ты собрал всю коллекцию'),
+          nxt && nxt.prog && withProg[0] ? h('div', { style: { marginTop: '8px' } }, meter(withProg[0].pr[0] / withProg[0].pr[1], true)) : null)));
+  }
 
   const pr = lib.principles[dayIndex() % lib.principles.length];
   if (pr) {

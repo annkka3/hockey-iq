@@ -414,7 +414,7 @@ function runGame(mode, set, rerender) {
       }, ease.linear);
       const goal = r.result === 'goal';
       results.push(goal);
-      logItem(session, { mode: mode.id, principle: mode.principle, verdict: goal ? 'best' : 'bad', result: r.result, kmh: Math.round(k), timeMs: 0,
+      logItem(session, { mode: mode.id, level: set.level, principle: mode.principle, verdict: goal ? 'best' : 'bad', result: r.result, kmh: Math.round(k), timeMs: 0,
         S: [+S.x.toFixed(1), +S.y.toFixed(1)], target: [+target.u.toFixed(2), +target.v.toFixed(2)] });
       hud.innerHTML = '';
       hud.append(h('span.shot-res.' + (goal ? 'g' : 'n'), { goal: 'ГОЛ', save: 'СЕЙВ', post: 'ШТАНГА', miss: 'МИМО', blocked: 'БЛОК' }[r.result]),
