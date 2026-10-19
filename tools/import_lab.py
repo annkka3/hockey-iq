@@ -52,8 +52,8 @@ def pt(p):
     return inside(across(p[1]), along(p[0]))
 
 
-ROLE_US = {'Ц': 'C', 'ЛП': 'LW', 'ПП': 'RW', 'ЛЗ': 'LD', 'ПЗ': 'RD', 'ВР': 'G'}
-ROLE_THEM = {'Ц': 'F', 'ЛП': 'F', 'ПП': 'F', 'ЛЗ': 'D', 'ПЗ': 'D', 'ВР': 'G'}
+ROLE_US = {'Ц': 'C', 'ЛН': 'LW', 'ПН': 'RW', 'ЛЗ': 'LD', 'ПЗ': 'RD', 'ВР': 'G'}
+ROLE_THEM = {'Ц': 'F', 'ЛН': 'F', 'ПН': 'F', 'ЛЗ': 'D', 'ПЗ': 'D', 'ВР': 'G'}
 
 
 def team(players):

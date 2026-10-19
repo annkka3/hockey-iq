@@ -97,7 +97,7 @@ function edit(card, rerender) {
   const pal = h('div.toggle', { style: { '--n': PALETTE.length } }, PALETTE.map(p => h('button', { class: p.k === tool ? 'on' : '', onclick: e => { tool = p.k; pal.querySelectorAll('button').forEach(b => b.classList.remove('on')); e.currentTarget.classList.add('on'); } }, p.label)));
   const viewT = h('div.toggle', { style: { '--n': 3 } }, [['dz', 'Своя зона'], ['nz', 'Средняя'], ['oz', 'Чужая']].map(([v, t]) => h('button', { class: c.view === v ? 'on' : '', onclick: e => { c.view = v; viewT.querySelectorAll('button').forEach(b => b.classList.remove('on')); e.currentTarget.classList.add('on'); redraw(); } }, t)));
   const title = h('input.input', { placeholder: 'Название: «Матч с Динамо, 2-й период»', value: c.title, oninput: e => { c.title = e.target.value; } });
-  const q = h('textarea.input', { placeholder: 'Вопрос: «Шайба у ЛП в углу. Куда ты?»', oninput: e => { c.question.text = e.target.value; } }); q.value = c.question.text;
+  const q = h('textarea.input', { placeholder: 'Вопрос: «Шайба у ЛН в углу. Куда ты?»', oninput: e => { c.question.text = e.target.value; } }); q.value = c.question.text;
   const phase = h('select.input', { onchange: e => { c.phase = e.target.value; } }, lib.phases.map(p => h('option', { value: p.id, selected: p.id === c.phase }, p.name)));
   const princ = h('select.input', { onchange: e => { c.principle = e.target.value; } }, lib.principles.map(p => h('option', { value: p.id, selected: p.id === c.principle }, p.name)));
   const optsBox = h('div.list');

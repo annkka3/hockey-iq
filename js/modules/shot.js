@@ -243,8 +243,8 @@ function runGame(mode, set, rerender) {
     const lCone = sv('g', {}, map), lEnt = sv('g', {}, map);
     const tMe = token(lEnt, 'me', 'Я'), tG = token(lEnt, 'g', 'ВР');
     const tD = sc.D ? token(lEnt, 'd', '') : null;
-    const tScr = sc.screen ? token(lEnt, 'mate', 'ПП') : null;
-    const tFrom = sc.from ? token(lEnt, 'mate', 'ЛП') : null;
+    const tScr = sc.screen ? token(lEnt, 'mate', 'ПН') : null;
+    const tFrom = sc.from ? token(lEnt, 'mate', 'ЛН') : null;
     if (tFrom) place(tFrom, sc.from);
     if (tD) place(tD, sc.D);
     if (tScr) place(tScr, sc.screen);
