@@ -6,6 +6,7 @@ import { cancelAll, tween } from '../engine/anim.js';
 import { lib, parseKey, verdictOf, explainOf, bestOf } from '../content.js';
 import { state, answer, startSession, logItem, finishSession } from '../core/state.js';
 import { itemPoints, summarize, fastAndSure } from '../engine/scoring.js';
+import { respond } from '../engine/sim.js';
 
 const LETTERS = ['А', 'Б', 'В', 'Г'];
 export const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -49,7 +50,12 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
     const fragment = (card.us || []).length + (card.them || []).length < 10;
     inner.append(h('div.q-meta', ((lib.phase[card.phase] || {}).name || '') + (test ? ' · контроль' : '') + (fragment ? ' · фрагмент: показаны ключевые игроки' : '')));
     if (card.story) inner.append(h('p.story', card.story));
-    inner.append(h('div.q', card.question.text));
+    const rd = card.read && !timer ? card.read : null;
+    const spd = rd ? h('div.spd', h('span.on', 'Смотри'), h('span', 'Предскажи'), h('span', 'Действуй')) : null;
+    const stage = k => { if (!spd) return; [...spd.children].forEach((s, j) => { s.className = j < k ? 'done' : j === k ? 'on' : ''; }); };
+    if (spd) inner.append(spd);
+    const qEl = h('div.q', rd ? 'Смотри внимательно…' : card.question.text);
+    inner.append(qEl);
 
     const wrap = h('div.rink-wrap');
     inner.append(wrap);
@@ -62,6 +68,44 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
     inner.append(zone);
     await scene.intro();
     skip.remove();
+
+    // Предскажи: вопрос на чтение игры → показ, что произошло на самом деле → новый стоп-кадр
+    let readOk = null, readMs = null, reveal = [];
+    if (rd) {
+      stage(1);
+      qEl.textContent = rd.text;
+      const r0 = performance.now();
+      const pick = await new Promise(res => {
+        const box = h('div.opts');
+        shuffle([...rd.options]).forEach((o, k) => {
+          const b = h('button.opt', { 'data-k': LETTERS[k], onclick: () => {
+            box.classList.add('locked');
+            box.querySelectorAll('.opt').forEach(x => x.classList.add('dim'));
+            b.classList.remove('dim');
+            b.classList.add(test ? 'read-pick' : o.correct ? 'v-best' : 'v-bad');
+            res(o);
+          } }, o.label);
+          box.append(b);
+        });
+        zone.append(box);
+      });
+      readMs = Math.round(performance.now() - r0);
+      readOk = !!pick.correct;
+      if (!test) {
+        const right = rd.options.find(o => o.correct);
+        zone.append(h('p.read-fb.' + (readOk ? 'yes' : 'no'), h('b', readOk ? 'Прочитал верно.' : 'Не так.'),
+          readOk ? pick.explain : `${right.label}. ${right.explain}`));
+      }
+      reveal = rd.reveal || [];
+      await scene.play(reveal);
+      if (rd.caption && !test) wrap.append(h('div.read-cap', rd.caption));
+      await new Promise(res => setTimeout(res, test ? 300 : 700));
+      scene.commit();
+      // прогноз и подпись остаются на экране, пока он решает: варианты прогноза убираем
+      zone.querySelector('.opts').remove();
+      stage(2);
+      qEl.textContent = card.question.text;
+    }
     const t0 = performance.now();
     let decided = false, clock = null;
     if (timer) {
@@ -87,10 +131,14 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       if (!preview) {
         if (!test) answer(keys[i], v); // контрольный срез не меняет интервалы повторения
         logItem(session, { cardId: card.id, key: keys[i], variant: variant ? variant.key : null, deck: card.deck, phase: card.phase,
-                           principle: card.principle, answer: opt.id, verdict: v, timeMs, ...extra });
+                           principle: card.principle, answer: opt.id, verdict: v, timeMs,
+                           ...(rd ? { read: readOk, readMs } : {}), ...extra });
       }
       if (card.question.kind === 'tap') scene.showZones(card.options, opt.id, o => verdictOf(card, variant, o));
+      wrap.querySelectorAll('.read-cap').forEach(n => n.remove());
       await scene.play(opt.moves || []);
+      // последствия: соперники и партнёры реагируют на решение (в контрольном срезе — без подсказок)
+      if (!test) await scene.play(respond(card, [reveal, opt.moves || []], v), 'sim');
       result(card, variant, opt, v, timeMs);
     };
 
@@ -149,6 +197,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
         scene.reset();
         if (card.question.kind === 'tap') scene.showZones(card.options, opt.id, o => verdictOf(card, variant, o));
         await scene.play(best.moves || [], 'best');
+        await scene.play(respond(card, [card.read ? card.read.reveal : [], best.moves || []], 'best'), 'sim');
         bestText.hidden = false;
       } }, 'Показать лучший'), next);
     } else { next.classList.add('only'); actions.append(next); }

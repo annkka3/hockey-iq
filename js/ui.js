@@ -54,6 +54,21 @@ export const ICONS = {
 
 export const icon = name => svg(ICONS[name]);
 
+/* Иконки нижней панели: контур + заливка (.f), заливка проявляется у активной вкладки — как в Telegram. */
+const N = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+export const NAV_ICONS = {
+  // календарь с шайбой
+  today: N('<rect class="f" x="3.5" y="5" width="17" height="15.5" rx="4.5"/><path d="M8 3v4M16 3v4M3.5 10.2h17"/><ellipse class="k" cx="12" cy="15.3" rx="3.2" ry="1.7"/>'),
+  // тактическая доска: крестик, нолик, стрелка розыгрыша
+  decks: N('<rect class="f" x="3" y="4" width="18" height="16" rx="4.5"/><path d="M6.8 8.2l2.4 2.4M9.2 8.2l-2.4 2.4"/><circle class="k" cx="16.4" cy="15.6" r="1.7"/><path d="M8 16.3c3.2 0 5.6-1.9 6.5-5.6"/><path d="M12.6 10.9l1.9-.6.7 1.9"/>'),
+  // ворота с сеткой и шайба
+  shot: N('<path class="f" d="M4 18.5V9a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v9.5z"/><path class="mesh" d="M8.7 6v12.5M12 6v12.5M15.3 6v12.5M4 10.5h16M4 14.5h16"/><path d="M2.5 18.5h19"/>'),
+  // секундомер с молнией
+  react: N('<circle class="f" cx="12" cy="13.5" r="7.5"/><path d="M10 2.6h4M12 2.6V6M18.2 6.6l1.4-1.4"/><path class="k" d="M12.8 9.6 9.8 14h3l-.8 3.6 3-4.6h-3z"/>'),
+  // игровой свитер
+  me: N('<path class="f" d="M9 3.5h6l5 2.9-1.9 4.4-2.4-1.1V20.5H8.3V9.7l-2.4 1.1L4 6.4z"/><path d="M9.8 3.6a2.2 2.2 0 0 0 4.4 0"/><path d="M8.3 14.2h7.4"/>'),
+};
+
 /* Площадка на весь экран: кнопка в углу, повторное нажатие возвращает обратно. */
 export function zoomable(wrap) {
   const b = h('button.zoom-btn', { type: 'button', 'aria-label': 'Площадка на весь экран', onclick: e => {

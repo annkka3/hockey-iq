@@ -135,9 +135,10 @@ def main():
             'principle': n.get('principle', 'support-triangle'), 'difficulty': s.get('level', 2),
             'title': s['title'], 'view': window(ys),
             'story': s['story'],
-            'question': {'kind': 'choice', 'text': s['question']},
+            'question': {'kind': 'choice', 'text': n.get('question', s['question'])},
             'us': us, 'them': them, 'puck': {'x': puck[0], 'y': puck[1]},
             'options': options, 'cue': s.get('cue'), 'ice': s.get('ice'),
+            **({'read': n['read']} if n.get('read') else {}),
             'source': {'basis': 'HOCKEY IQ LAB 4.0 — ' + topic}, 'status': 'draft', 'origin': 'lab',
         }
         cards.append(card)

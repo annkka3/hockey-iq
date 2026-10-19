@@ -148,6 +148,22 @@ def main():
                     if not re.match(r'^(plan|score|strength|clock):[a-z-]+$', v.get('key', '')): err(cid, f'плохой ключ контекста {v.get("key")}')
             elif [o.get('verdict') for o in opts].count('best') != 1:
                 err(cid, 'лучших решений не одно')
+            rd = c.get('read')
+            if rd:
+                # «Смотри → Предскажи → Действуй»: вопрос на чтение, затем показ продолжения, затем решение
+                if not rd.get('text'): err(cid, 'read: нет вопроса')
+                ro = rd.get('options', [])
+                if not 2 <= len(ro) <= 3: err(cid, 'read: нужно 2–3 варианта')
+                if sum(1 for o in ro if o.get('correct')) != 1: err(cid, 'read: верный вариант должен быть ровно один')
+                if len({o.get('id') for o in ro}) != len(ro): err(cid, 'read: повтор id варианта')
+                for o in ro:
+                    if not o.get('label') or not o.get('explain'): err(cid, 'read: вариант без текста или объяснения')
+                if not rd.get('reveal'): err(cid, 'read: нет reveal — продолжения, которое показываем после прогноза')
+                me_id = next((e['id'] for e in c.get('us', []) if e.get('me')), None)
+                for mv in rd.get('reveal', []):
+                    if mv['who'] not in ents or ents[mv['who']] is None: err(cid, f'read: ход несуществующего {mv["who"]}')
+                    elif not on_ice(*mv['to'], 0.2): err(cid, f'read: ход {mv["who"]} за борт {mv["to"]}')
+                    if mv['who'] == me_id: warn(cid, 'read: в продолжении двигается сам «Я» — решение должен принять он')
             if not c.get('source'): warn(cid, 'нет источника')
             c.setdefault('status', 'draft')
             cards.append(c)

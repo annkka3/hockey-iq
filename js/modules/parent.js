@@ -3,7 +3,7 @@
 import { h, meter, toast, icon, fmtSec } from '../ui.js';
 import { lib, parseKey, keysOf } from '../content.js';
 import { state, setParent, resetAll } from '../core/state.js';
-import { summarize, accuracyBy, medianTime } from '../engine/scoring.js';
+import { summarize, accuracyBy, medianTime, readRate } from '../engine/scoring.js';
 import { isStuck, today, addDays } from '../engine/srs.js';
 import { play } from './play.js';
 import * as editor from './editor.js';
@@ -68,6 +68,14 @@ function dashboard(view, rerender) {
         h('div', h('b', sum.bestStreak), h('span', 'лучшая серия')),
         h('div', h('b', med ? (med / 1000).toFixed(1) + ' с' : '—'), h('span', 'на верное решение')))));
 
+
+  {
+    const rr = readRate(state.sessions);
+    if (rr.n) view.append(h('div.panel', { style: { marginTop: '12px' } },
+      h('div.row', h('div.grow', h('b', 'Предугадывание'), h('div.muted.small', 'Верные прогнозы в шаге «Предскажи» за 30 дней')),
+        h('div', { style: { fontFamily: 'var(--display)', fontWeight: 800, fontSize: '22px', color: 'var(--cyan)' } }, Math.round(rr.rate * 100) + '%')),
+      meter(rr.rate), h('div.muted.small', { style: { marginTop: '6px' } }, `${rr.ok} из ${rr.n}`)));
+  }
   const acc = accuracyBy(state.sessions, 'principle');
   const accRows = lib.principles.filter(p => acc[p.id]).sort((a, b) => acc[a.id].rate - acc[b.id].rate);
   view.append(h('div.h2', 'Принципы: слабые сверху'),

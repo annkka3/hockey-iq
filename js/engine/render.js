@@ -215,7 +215,9 @@ export class Scene {
     const shrink = mv.who === 'puck' ? 0.3 : 1.1;
     const k = len > shrink ? (len - shrink) / len : 1;
     const ex = a.x + (b.x - a.x) * k, ey = a.y + (b.y - a.y) * k;
-    const line = el('line', { x1: a.x, y1: a.y, x2: ex, y2: ey, class: `arrow a-${kind} ${style}`, 'marker-end': `url(#m-${style === 'best' ? 'best' : kind}-${this.id})` }, this.lArrows);
+    const sim = style === 'sim';
+    const line = el('line', { x1: a.x, y1: a.y, x2: ex, y2: ey, class: `arrow a-${kind} ${style}${sim ? ' ' + (e.team || 'puck') : ''}` }, this.lArrows);
+    if (!sim) line.setAttribute('marker-end', `url(#m-${style === 'best' ? 'best' : kind}-${this.id})`);
     const puck = this.ents.puck;
     const carry = mv.carry && puck;
     const dur = !this.animOn ? 0 : kind === 'skate' ? Math.max(500, len * 90) : kind === 'shot' ? 380 : Math.max(320, len * 35);
@@ -232,6 +234,12 @@ export class Scene {
       if (carry) this.place('puck', { x: p.x + 0.7, y: p.y - 0.7 });
     }, kind === 'skate' ? ease.inOut : ease.out);
     if (kind === 'skate') line.style.strokeDasharray = '';
+  }
+
+  /* Закрепить текущую расстановку как новый стоп-кадр (после показа продолжения в «Предскажи»). */
+  commit() {
+    this.clearArrows();
+    for (const id in this.ents) this.ents[id].home = { ...this.ents[id].pos };
   }
 
   /* Вернуть стоп-кадр (перед показом лучшего варианта). */

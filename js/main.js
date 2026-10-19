@@ -1,5 +1,5 @@
 /* Точка входа: контент, облако (если подключено), каркас, маршруты. */
-import { h, icon, ICONS, svg, sheet } from './ui.js';
+import { h, icon, ICONS, NAV_ICONS, svg, sheet } from './ui.js';
 import { loadContent, syncMine } from './content.js';
 import { state, setProfile, onChange } from './core/state.js';
 import { attach, signedIn } from './core/sync.js';
@@ -18,6 +18,7 @@ const TABS = [
 ];
 
 let cloud = null;
+let lastTab = 0;
 const app = document.getElementById('app');
 
 function route() { return (location.hash.replace(/^#\/?/, '') || 'today').split('/')[0]; }
@@ -45,14 +46,21 @@ function render() {
   else if (r === 'parent') parent.render(view, rerender);
   else today.render(view, rerender);
 
+  // Плавающая панель: «пилюля» переезжает под активную вкладку из прежнего положения
   const nav = h('nav.tabs');
   const active = r === 'parent' ? 'me' : r;
+  const idx = Math.max(0, TABS.findIndex(([id]) => id === active));
+  const pill = h('i.nav-pill', { style: { '--i': lastTab } });
+  nav.append(pill);
   for (const [id, label] of TABS) {
     const locked = (id === 'shot' && !f.shot) || (id === 'react' && !f.react);
-    nav.append(h('button.tab', { class: id === active ? 'on' : '', onclick: () => { location.hash = '#/' + id; } },
-      svg(ICONS[id]), label, locked ? h('span.lock', icon('lock')) : null));
+    nav.append(h('button.tab', { class: id === active ? 'on' : '', 'aria-current': id === active ? 'page' : null,
+      onclick: () => { if (location.hash !== '#/' + id) location.hash = '#/' + id; else window.scrollTo({ top: 0, behavior: 'smooth' }); } },
+      h('span.tab-ico', svg(NAV_ICONS[id])), h('span.tab-lb', label), locked ? h('span.lock', icon('lock')) : null));
   }
   app.append(nav);
+  if (lastTab !== idx) requestAnimationFrame(() => requestAnimationFrame(() => pill.style.setProperty('--i', idx)));
+  lastTab = idx;
   if (state.meta.onboarded && !document.querySelector('.play, .reveal-back')) {
     const fresh = cards.checkAwards();
     if (fresh.length) cards.reveal(fresh, () => render());

@@ -21,7 +21,18 @@ export const RANKS = [
    Скорость в очки не входит — быстрый, но случайный ответ не должен выглядеть успехом.
    Время считается отдельно (medianTime) и только по верным ответам. */
 export function itemPoints(it) {
-  return it.verdict === 'best' ? 10 : it.verdict === 'ok' ? 5 : 1;
+  return (it.verdict === 'best' ? 10 : it.verdict === 'ok' ? 5 : 1) + (it.read === true ? 3 : 0); // +3 за верный прогноз
+}
+
+/* Предугадывание: доля верных прогнозов в шаге «Предскажи» за 30 дней (вне контрольного среза). */
+export function readRate(sessions, { since = 30, now = new Date() } = {}) {
+  const from = addDays(today(now), -since);
+  let n = 0, ok = 0;
+  for (const s of sessions) {
+    if ((s.day || '') < from || s.module === 'test') continue;
+    for (const it of s.items || []) if (typeof it.read === 'boolean') { n++; if (it.read) ok++; }
+  }
+  return { n, ok, rate: n ? ok / n : null };
 }
 
 /* «Быстро и точно»: время показываем как достижение, только когда принцип уже освоен
