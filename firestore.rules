@@ -1,0 +1,68 @@
+rules_version = '2';
+// Правила Hockey IQ. Написаны сразу под командную версию: на этапе 1 команд нет,
+// и ветки teams/* просто пустые. Родитель видит только своих детей (guardians),
+// тренер — только игроков своей команды (coaches), игрок — себя.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function player(p) { return get(/databases/$(database)/documents/players/$(p)).data; }
+    function isGuardian(p) { return signedIn() && me() in player(p).get('guardians', []); }
+    function team(t) { return get(/databases/$(database)/documents/teams/$(t)).data; }
+    function isCoach(t) { return signedIn() && me() in team(t).get('coaches', []); }
+    function isMember(t) { return signedIn() && exists(/databases/$(database)/documents/teams/$(t)/members/$(me())); }
+    function isCoachOf(p) { return player(p).get('teamId', null) != null && isCoach(player(p).teamId); }
+    function canRead(p) { return signedIn() && (me() == p || isGuardian(p) || isCoachOf(p)); }
+
+    match /users/{uid} {
+      allow read, write: if signedIn() && me() == uid;
+    }
+
+    match /players/{p} {
+      allow read: if canRead(p);
+      allow create: if signedIn() && me() == p;
+      // игрок меняет свой документ, но не может сам себе назначить опекунов или команду в обход кода
+      allow update: if signedIn() && (
+        (me() == p && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['guardians']))
+        || (isGuardian(p) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['parent', 'updatedAt'])));
+
+      match /progress/{k} { allow read: if canRead(p); allow write: if signedIn() && me() == p; }
+      match /sessions/{s} {
+        allow read: if canRead(p);
+        allow create, update: if signedIn() && me() == p;
+      }
+      match /records/{m} { allow read: if canRead(p); allow write: if signedIn() && me() == p; }
+      // «мои моменты»: на этапе 1 родитель пишет из аккаунта ребёнка, в командной версии — из своего (опекун)
+      match /cards/{c} { allow read: if signedIn() && (me() == p || isGuardian(p) || isCoachOf(p)); allow write: if signedIn() && (me() == p || isGuardian(p)); }
+      match /assignments/{a} {
+        allow read: if canRead(p);
+        allow create, delete: if isCoachOf(p);
+        allow update: if (signedIn() && me() == p) || isCoachOf(p);
+      }
+      match /messages/{m} {
+        allow read: if signedIn() && (me() == p || isGuardian(p) || isCoachOf(p));
+        allow create: if isGuardian(p) || isCoachOf(p);
+      }
+    }
+
+    match /teams/{t} {
+      allow read: if isMember(t) || isCoach(t);
+      allow create: if signedIn() && me() in request.resource.data.coaches;
+      allow update, delete: if isCoach(t);
+      match /members/{uid} {
+        allow read: if isMember(t) || isCoach(t);
+        // вход по коду: код совпадает с полем команды
+        allow create: if signedIn() && me() == uid && request.resource.data.joinCode == team(t).joinCode;
+        allow delete: if isCoach(t) || (signedIn() && me() == uid);
+        allow update: if isCoach(t);
+      }
+      match /stats/{uid} { allow read: if isMember(t) || isCoach(t); allow write: if signedIn() && me() == uid && isMember(t); }
+      match /{sub=**} { allow read: if isMember(t) || isCoach(t); allow write: if isCoach(t); }
+    }
+
+    match /content/packs/{pack} {
+      allow read: if signedIn();
+      allow write: if signedIn() && get(/databases/$(database)/documents/users/$(me())).data.get('roles', {}).get('author', false) == true;
+    }
+  }
+}
