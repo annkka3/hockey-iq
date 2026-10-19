@@ -1,16 +1,17 @@
 /* Экран решения: подводка → стоп-кадр → ответ → проигрыш последствий → разбор.
    Один и тот же экран для тренировки дня, колод, режима матча и предпросмотра при ревью. */
-import { h, icon, toast } from '../ui.js';
+import { h, icon, toast, zoomable } from '../ui.js';
 import { Scene } from '../engine/render.js';
 import { cancelAll, tween } from '../engine/anim.js';
 import { lib, parseKey, verdictOf, explainOf, bestOf } from '../content.js';
 import { state, answer, startSession, logItem, finishSession } from '../core/state.js';
-import { itemPoints, summarize } from '../engine/scoring.js';
+import { itemPoints, summarize, fastAndSure } from '../engine/scoring.js';
 
 const LETTERS = ['А', 'Б', 'В', 'Г'];
+export const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const TAG = { best: 'Лучшее решение', ok: 'Можно', bad: 'Ошибка' };
 
-export function play(keys, { module = 'decks', preview = false, onDone, timer = 0 } = {}) {
+export function play(keys, { module = 'decks', preview = false, onDone, timer = 0, test = false } = {}) {
   if (!keys.length) { toast('Пока нечего повторять — загляни завтра'); return; }
   const root = h('div.play');
   const inner = h('div.play-in');
@@ -45,7 +46,8 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
 
     inner.append(h('div.play-top', h('button.x', { onclick: close, 'aria-label': 'Закрыть' }, icon('close')), dots()));
     if (variant) inner.append(h('div.ctx', h('b', variant.label), variant.sub ? h('span', variant.sub) : null));
-    inner.append(h('div.q-meta', (lib.phase[card.phase] || {}).name || ''));
+    const fragment = (card.us || []).length + (card.them || []).length < 10;
+    inner.append(h('div.q-meta', ((lib.phase[card.phase] || {}).name || '') + (test ? ' · контроль' : '') + (fragment ? ' · фрагмент: показаны ключевые игроки' : '')));
     if (card.story) inner.append(h('p.story', card.story));
     inner.append(h('div.q', card.question.text));
 
@@ -53,6 +55,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
     inner.append(wrap);
     scene = new Scene(wrap, card, { rink: state.profile.rink, anim: state.profile.anim && !timer });
     window.__hkScene = scene; // для автопроверок
+    zoomable(wrap);
     const skip = h('button.skip', { onclick: () => cancelAll() }, 'Пропустить');
     wrap.append(skip);
     const zone = h('div');
@@ -82,7 +85,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       results.push(v);
       inner.querySelector('.dots').replaceWith(dots());
       if (!preview) {
-        answer(keys[i], v);
+        if (!test) answer(keys[i], v); // контрольный срез не меняет интервалы повторения
         logItem(session, { cardId: card.id, key: keys[i], variant: variant ? variant.key : null, deck: card.deck, phase: card.phase,
                            principle: card.principle, answer: opt.id, verdict: v, timeMs, ...extra });
       }
@@ -93,7 +96,8 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
 
     if (card.question.kind === 'choice') {
       const box = h('div.opts');
-      card.options.forEach((o, k) => {
+      // порядок вариантов каждый раз новый: нельзя выучить «первая кнопка — правильная»
+      shuffle([...card.options]).forEach((o, k) => {
         const b = h('button.opt', { 'data-k': LETTERS[k], onclick: () => {
           box.classList.add('locked');
           box.querySelectorAll('.opt').forEach(x => x.classList.add('dim'));
@@ -128,6 +132,12 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
   }
 
   function result(card, variant, opt, v, timeMs) {
+    if (test) {
+      // контроль: без разбора и без правильного ответа — чтобы срез можно было повторить честно
+      inner.append(h('div.result', h('p.muted', 'Ответ принят.'),
+        h('button.btn.primary.block', { onclick: () => { i++; i < keys.length ? show() : finish(); } }, i + 1 < keys.length ? 'Дальше' : 'Итоги')));
+      return;
+    }
     const pts = itemPoints({ verdict: v, timeMs });
     const pr = lib.principle[card.principle];
     const best = bestOf(card, variant);
@@ -151,7 +161,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       card.cue ? h('p.cue', h('b', 'Куда смотреть: '), card.cue) : null,
       card.ice ? h('p.ice', h('b', 'На льду: '), card.ice) : null,
       actions);
-    if (timeMs && v === 'best' && timeMs < 4000 && !preview) box.querySelector('.plus').textContent += ' · быстро';
+    if (v === 'best' && !preview && fastAndSure(state.sessions, card.principle, timeMs)) box.querySelector('.plus').textContent += ' · быстро и точно';
     inner.append(box);
     setTimeout(() => box.scrollIntoView({ behavior: 'smooth', block: 'end' }), 60);
   }
@@ -163,6 +173,16 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
     const sum = summarize(state.sessions);
     const gained = session ? session.items.reduce((a, it) => a + itemPoints(it), 0) : 0;
     inner.innerHTML = '';
+    if (test) {
+      const t = session.items.filter(x => x.verdict === 'best').map(x => x.timeMs).sort((a, b) => a - b);
+      inner.append(h('div.play-top', h('button.x', { onclick: close, 'aria-label': 'Закрыть' }, icon('close'))),
+        h('div.final', h('div.q-meta', 'Контрольный срез'),
+          h('div.big', `${Math.round(n('best') / results.length * 100)}%`), h('div.muted', `лучших решений в незнакомых ситуациях (${n('best')} из ${results.length})`),
+          t.length ? h('p.muted', `Время верного решения: ${(t[Math.floor(t.length / 2)] / 1000).toFixed(1)} с (медиана)`) : null,
+          h('p.small.muted', 'Правильные ответы не показываются: эти ситуации не входят в тренировки, поэтому через 4 недели срез можно пройти снова и сравнить.'),
+          h('div', { style: { marginTop: '28px' } }, h('button.btn.primary.block', { onclick: close }, 'Готово'))));
+      return;
+    }
     inner.append(h('div.play-top', h('button.x', { onclick: close, 'aria-label': 'Закрыть' }, icon('close'))),
       h('div.final',
         h('div.q-meta', preview ? 'Предпросмотр' : 'Смена окончена'),

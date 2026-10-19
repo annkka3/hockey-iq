@@ -3,7 +3,7 @@
 import { h, icon, toast } from '../ui.js';
 import { Scene } from '../engine/render.js';
 import { tween, wait, cancelAll, ease } from '../engine/anim.js';
-import { lib, keysOf } from '../content.js';
+import { lib, keysOf, trainCards } from '../content.js';
 import { state, startSession, logItem, finishSession, setProfile } from '../core/state.js';
 import { buildQueue } from '../engine/srs.js';
 import { play } from './play.js';
@@ -43,7 +43,7 @@ function bestOf(id) {
 
 function start(d, rerender) {
   if (d.id === 'blitz') {
-    const keys = buildQueue(lib.cards.filter(c => c.question.kind === 'choice').flatMap(keysOf), state.progress, { size: 10, maxNew: 10 });
+    const keys = buildQueue(trainCards().filter(c => c.question.kind === 'choice').flatMap(keysOf), state.progress, { size: 10, maxNew: 10 });
     play(keys, { module: 'react:blitz', timer: 4, onDone: rerender });
     return;
   }

@@ -15,7 +15,18 @@ export async function loadContent() {
   for (const p of data.principles) lib.principle[p.id] = p;
   for (const p of data.phases) lib.phase[p.id] = p;
   addPack(data.cards, 'core');
+  markHoldout();
 }
+
+/* Контрольный набор: примерно каждая шестая встроенная ситуация не попадает в тренировки.
+   На ней раз в 4 недели проверяется перенос — решение незнакомых эпизодов без подсказок.
+   Выбор детерминированный (по id), поэтому одинаков на всех устройствах. */
+const hash = s => { let x = 2166136261; for (const ch of s) { x ^= ch.charCodeAt(0); x = Math.imul(x, 16777619); } return x >>> 0; };
+function markHoldout() {
+  for (const c of lib.cards) if (c.pack === 'core' && !c.variants && c.question.kind === 'choice' && hash(c.id) % 6 === 0) c.holdout = true;
+}
+export const trainCards = () => lib.cards.filter(c => !c.holdout);
+export const holdoutCards = () => lib.cards.filter(c => c.holdout);
 
 export function addPack(cards, pack) {
   for (const c of cards) {

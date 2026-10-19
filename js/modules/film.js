@@ -3,11 +3,12 @@
    — насмотренность: розыгрыш идёт по шагам, в паузах вопрос; неверный ответ объясняется, дальше показывается правильное продолжение;
    — «на два хода вперёд»: у варианта ответа есть своя ветка then — ситуация развивается по выбору игрока.
    Формат шага: { caption, moves: [...как в карточках] } или { pause: { question, options: [{ label, correct, explain, then?: [шаги] }] } }. */
-import { h, icon } from '../ui.js';
+import { h, icon, zoomable } from '../ui.js';
 import { Scene } from '../engine/render.js';
 import { cancelAll, wait, tween, lerp } from '../engine/anim.js';
 import { lib } from '../content.js';
 import { state, startSession, logItem, finishSession } from '../core/state.js';
+import { shuffle } from './play.js';
 
 export function list(view, rerender, { title = 'Разборы розыгрышей', kind = null, mission = false } = {}) {
   const plays = (lib.plays || []).filter(p => (!kind || (p.kind || 'film') === kind) && !!p.mission === mission);
@@ -18,6 +19,19 @@ export function list(view, rerender, { title = 'Разборы розыгрыш�
       h('div.film-thumb', icon(p.kind === 'branch' ? 'react' : 'match')),
       h('div.film-t', p.title), h('div.film-s', p.line),
       seen.has(p.id) ? h('span.badge', 'просмотрено') : null))));
+}
+
+/* Каталожная сетка (вкладки «Миссии» и «Разборы»): две колонки, всё видно без горизонтальной прокрутки. */
+export function grid(view, rerender, { kind = null, mission = false, title = null, lead = null } = {}) {
+  const plays = (lib.plays || []).filter(p => (!kind || (p.kind || 'film') === kind) && !!p.mission === mission);
+  if (!plays.length) return;
+  const seen = new Set(state.sessions.filter(s => s.module.startsWith('film:') && s.items.length).map(s => s.module.slice(5)));
+  if (title) view.append(h('div.h2', title));
+  if (lead) view.append(h('p.muted.small', { style: { margin: '0 0 10px' } }, lead));
+  view.append(h('div.film-grid', plays.map(p => h('button.film-card', { onclick: () => watch(p, rerender) },
+    h('div.film-thumb', icon(p.mission ? 'shield' : p.kind === 'branch' ? 'react' : 'match')),
+    h('div.film-t', p.title), h('div.film-s', p.line),
+    seen.has(p.id) ? h('span.badge', 'пройдено') : null))));
 }
 
 export function watch(play, rerender) {
@@ -37,6 +51,7 @@ export function watch(play, rerender) {
     h('div.row', { style: { marginTop: '12px' } }, speedBtn, h('button.btn.small', { onclick: () => { close(); watch(play, rerender); } }, 'С начала')));
 
   const scene = new Scene(wrap, play, { rink: state.profile.rink, anim: true });
+  zoomable(wrap);
 
   async function runSteps(steps) {
     for (const st of steps) {
@@ -77,11 +92,11 @@ export function watch(play, rerender) {
       if (p.cue) { const c = h('p.cue', { hidden: true }, h('b', 'Куда смотреть: '), p.cue); panel.append(h('button.btn.small.ghost', { onclick: e => { c.hidden = false; e.currentTarget.remove(); } }, 'Подсказка'), c); }
       panel.append(box);
       const t0 = performance.now();
-      p.options.forEach((o, k) => box.append(h('button.opt', { 'data-k': 'АБВГ'[k], onclick: async () => {
+      shuffle([...p.options]).forEach((o, k) => box.append(h('button.opt', { 'data-k': 'АБВГ'[k], onclick: async () => {
         box.classList.add('locked');
         box.querySelectorAll('.opt').forEach(x => x.classList.add('dim'));
         const btn = box.children[k]; btn.classList.remove('dim'); btn.classList.add(o.correct ? 'v-best' : 'v-bad');
-        logItem(session, { play: play.id, principle: play.principle, verdict: o.correct ? 'best' : 'bad', answer: k, timeMs: Math.round(performance.now() - t0) });
+        logItem(session, { play: play.id, principle: play.principle, verdict: o.correct ? 'best' : 'bad', answer: o.label.slice(0, 60), timeMs: Math.round(performance.now() - t0) });
         panel.append(h('p.explain', o.explain));
         if (p.ice && o.correct) panel.append(h('p.ice', h('b', 'На льду: '), p.ice));
         if (!o.correct && !o.then) { const right = p.options.find(x => x.correct); if (right) panel.append(h('p.explain.muted', 'Смотри, как правильно: ' + right.label.toLowerCase())); }

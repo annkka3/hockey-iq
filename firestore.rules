@@ -14,17 +14,32 @@ service cloud.firestore {
     function isCoachOf(p) { return player(p).get('teamId', null) != null && isCoach(player(p).teamId); }
     function canRead(p) { return signedIn() && (me() == p || isGuardian(p) || isCoachOf(p)); }
 
+    function roles() { return get(/databases/$(database)/documents/users/$(me())).data.get('roles', {}); }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+
+    // Роли (author, coach) выдаются только вручную из консоли Firebase.
+    // Пользователь создаёт себе документ лишь с ролью игрока и не может менять роли потом.
     match /users/{uid} {
-      allow read, write: if signedIn() && me() == uid;
+      allow read: if signedIn() && me() == uid;
+      allow create: if signedIn() && me() == uid
+        && request.resource.data.get('roles', {'player': true}) == {'player': true};
+      allow update: if signedIn() && me() == uid && !changed().hasAny(['roles']);
+      allow delete: if false;
     }
 
     match /players/{p} {
       allow read: if canRead(p);
-      allow create: if signedIn() && me() == p;
-      // игрок меняет свой документ, но не может сам себе назначить опекунов или команду в обход кода
+      // при создании — без опекунов и без команды
+      allow create: if signedIn() && me() == p
+        && request.resource.data.get('guardians', []) == []
+        && request.resource.data.get('teamId', null) == null;
+      // игрок не назначает себе опекунов; команду указывает только ту, куда уже вошёл по коду
       allow update: if signedIn() && (
-        (me() == p && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['guardians']))
-        || (isGuardian(p) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['parent', 'updatedAt'])));
+        (me() == p && !changed().hasAny(['guardians'])
+          && (!changed().hasAny(['teamId']) || request.resource.data.teamId == null
+              || exists(/databases/$(database)/documents/teams/$(request.resource.data.teamId)/members/$(me()))))
+        || (isGuardian(p) && changed().hasOnly(['parent', 'updatedAt'])));
+      allow delete: if false;
 
       match /progress/{k} { allow read: if canRead(p); allow write: if signedIn() && me() == p; }
       match /sessions/{s} {
@@ -47,11 +62,12 @@ service cloud.firestore {
 
     match /teams/{t} {
       allow read: if isMember(t) || isCoach(t);
-      allow create: if signedIn() && me() in request.resource.data.coaches;
+      // команду создаёт только пользователь с ролью тренера (выдаётся вручную), себя — в тренеры
+      allow create: if signedIn() && roles().get('coach', false) == true && me() in request.resource.data.coaches;
       allow update, delete: if isCoach(t);
       match /members/{uid} {
         allow read: if isMember(t) || isCoach(t);
-        // вход по коду: код совпадает с полем команды
+        // вход по коду: код совпадает с полем команды (код — 8+ символов, иначе перебор)
         allow create: if signedIn() && me() == uid && request.resource.data.joinCode == team(t).joinCode;
         allow delete: if isCoach(t) || (signedIn() && me() == uid);
         allow update: if isCoach(t);
@@ -62,7 +78,7 @@ service cloud.firestore {
 
     match /content/packs/{pack} {
       allow read: if signedIn();
-      allow write: if signedIn() && get(/databases/$(database)/documents/users/$(me())).data.get('roles', {}).get('author', false) == true;
+      allow write: if signedIn() && roles().get('author', false) == true;
     }
   }
 }

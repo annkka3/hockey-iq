@@ -35,7 +35,7 @@ function geometry(view) {
   const note = h('p.muted.small');
 
   const shooter = token(lEnt, 'me', 'Я');
-  const goalie = token(lEnt, 'g', 'В');
+  const goalie = token(lEnt, 'g', 'ВР');
 
   function update() {
     if (geo.auto || !geo.G) geo.G = P.goaliePos(geo.S, geo.depth);
@@ -203,7 +203,8 @@ function setup(mode) {
     return { S, G: P.goaliePos(S, depth), stance, others: [], depth };
   }
   if (mode === 'royal') {
-    const side = pick([-1, 1]);
+    // хват: левше бросок в касание удобнее с правого круга (клюшка смотрит в середину), правше — с левого
+    const side = state.profile.hand === 'R' ? -1 : 1;
     const from = { x: -6.8 * side, y: rnd(48.5, 50.5) }, S = { x: 6.6 * side, y: rnd(48.5, 50.5) };
     return { S, from, G: P.goaliePos(from, 1.0), Gend: P.goaliePos(S, 1.0), stance: 'butterfly', others: [] };
   }
@@ -240,10 +241,10 @@ function runGame(mode, set, rerender) {
     const map = sv('svg', { viewBox: '-15.6 -0.6 31.2 21', class: 'rink-svg mini-map' });
     drawRink(sv('g', { class: 'rink' }, map), R, 'mm' + results.length);
     const lCone = sv('g', {}, map), lEnt = sv('g', {}, map);
-    const tMe = token(lEnt, 'me', 'Я'), tG = token(lEnt, 'g', 'В');
+    const tMe = token(lEnt, 'me', 'Я'), tG = token(lEnt, 'g', 'ВР');
     const tD = sc.D ? token(lEnt, 'd', '') : null;
-    const tScr = sc.screen ? token(lEnt, 'mate', 'ПК') : null;
-    const tFrom = sc.from ? token(lEnt, 'mate', 'ЛК') : null;
+    const tScr = sc.screen ? token(lEnt, 'mate', 'ПП') : null;
+    const tFrom = sc.from ? token(lEnt, 'mate', 'ЛП') : null;
     if (tFrom) place(tFrom, sc.from);
     if (tD) place(tD, sc.D);
     if (tScr) place(tScr, sc.screen);

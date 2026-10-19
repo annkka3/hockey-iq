@@ -1,6 +1,6 @@
 /* «Сегодня»: тренировка дня, серия, звание, сообщение от родителя, что дальше. */
 import { h, icon, ring, meter, svg } from '../ui.js';
-import { lib, keysOf } from '../content.js';
+import { lib, keysOf, trainCards } from '../content.js';
 import { state } from '../core/state.js';
 import { summarize } from '../engine/scoring.js';
 import { buildQueue, today } from '../engine/srs.js';
@@ -9,7 +9,7 @@ import * as cards from './cards.js';
 
 const cfg = () => (window.HK_CONFIG && window.HK_CONFIG.session) || { size: 10, maxNew: 5 };
 
-export const allKeys = () => lib.cards.flatMap(keysOf);
+export const allKeys = () => trainCards().flatMap(keysOf);
 
 export function render(view, rerender) {
   const sum = summarize(state.sessions);
@@ -60,7 +60,7 @@ export function render(view, rerender) {
   ];
   const wd = (new Date().getDay() + 6) % 7;
   const monday = new Date(); monday.setDate(monday.getDate() - wd);
-  const dayDone = k => { const d = new Date(monday); d.setDate(monday.getDate() + k); const rec = sum.days[today(d)]; return rec && rec.items > 0; };
+  const dayDone = k => { const d = new Date(monday); d.setDate(monday.getDate() + k); const rec = sum.days[today(d)]; return rec && rec.items >= 5; }; // как и в серии: день засчитан с 5 ответов
   view.append(h('div.h2', 'План недели'),
     h('div.plan', PLAN.map((p, k) => h('div.plan-day' + (k === wd ? '.now' : dayDone(k) ? '.done' : ''),
       h('div.dn', ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'][k]),

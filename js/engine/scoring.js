@@ -17,10 +17,19 @@ export const RANKS = [
   { pts: 7500, name: 'Легенда' },
 ];
 
-/* Очки за ответ: лучшее 10, «можно» 5, ошибка 1 (за попытку). Быстрое лучшее решение (до 4 с) +3. */
+/* Очки только за качество решения: лучшее 10, «можно» 5, ошибка 1 (за попытку).
+   Скорость в очки не входит — быстрый, но случайный ответ не должен выглядеть успехом.
+   Время считается отдельно (medianTime) и только по верным ответам. */
 export function itemPoints(it) {
-  const base = it.verdict === 'best' ? 10 : it.verdict === 'ok' ? 5 : 1;
-  return base + (it.verdict === 'best' && it.timeMs > 0 && it.timeMs < 4000 ? 3 : 0);
+  return it.verdict === 'best' ? 10 : it.verdict === 'ok' ? 5 : 1;
+}
+
+/* «Быстро и точно»: время показываем как достижение, только когда принцип уже освоен
+   (не меньше 5 ответов за 30 дней и 80 % лучших решений). */
+export function fastAndSure(sessions, principle, timeMs) {
+  if (!principle || !timeMs || timeMs >= 4000) return false;
+  const a = accuracyBy(sessions, 'principle')[principle];
+  return !!a && a.n >= 5 && a.rate >= 0.8;
 }
 
 export function rankOf(points) {
@@ -83,7 +92,7 @@ export function accuracyBy(sessions, field, { since = 30, now = new Date() } = {
 export function medianTime(sessions, { since = 14, now = new Date() } = {}) {
   const from = addDays(today(now), -since);
   const t = [];
-  for (const s of sessions) if ((s.day || '') >= from) for (const it of s.items || []) if (it.timeMs > 0) t.push(it.timeMs);
+  for (const s of sessions) if ((s.day || '') >= from && !String(s.module).startsWith('react:faceoff')) for (const it of s.items || []) if (it.timeMs > 0 && it.verdict === 'best' && it.cardId) t.push(it.timeMs);
   if (!t.length) return null;
   t.sort((a, b) => a - b);
   return t[Math.floor(t.length / 2)];

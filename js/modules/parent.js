@@ -66,7 +66,7 @@ function dashboard(view, rerender) {
       h('div.kv',
         h('div', h('b', sum.points), h('span', 'очков')),
         h('div', h('b', sum.bestStreak), h('span', 'лучшая серия')),
-        h('div', h('b', med ? (med / 1000).toFixed(1) + ' с' : '—'), h('span', 'на решение')))));
+        h('div', h('b', med ? (med / 1000).toFixed(1) + ' с' : '—'), h('span', 'на верное решение')))));
 
   const acc = accuracyBy(state.sessions, 'principle');
   const accRows = lib.principles.filter(p => acc[p.id]).sort((a, b) => acc[a.id].rate - acc[b.id].rate);
@@ -102,6 +102,13 @@ function dashboard(view, rerender) {
       } }, 'Сохранить')));
 
   if (window.HK_CONFIG.features.editor) editor.list(view, rerender);
+
+  const tests = state.sessions.filter(x => x.module === 'test' && x.items.length >= 5);
+  if (tests.length) view.append(h('div.h2', 'Контрольные срезы'),
+    h('div.panel', h('p.muted.small', { style: { marginTop: 0 } }, 'Незнакомые ситуации без подсказок, раз в 4 недели. Рост здесь — признак, что мышление переносится, а не ответы запоминаются.'),
+      h('div.list', tests.map(x => { const ok = x.items.filter(i => i.verdict === 'best'); const t = ok.map(i => i.timeMs).sort((a, b) => a - b);
+        return h('div.li', h('span', new Date(x.startedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })),
+          h('span.r', `${Math.round(ok.length / x.items.length * 100)}% · ${t.length ? (t[Math.floor(t.length / 2)] / 1000).toFixed(1) + ' с' : '—'}`)); }))));
 
   reviewBlock(view, rerender);
 

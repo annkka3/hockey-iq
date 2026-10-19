@@ -6,6 +6,8 @@ import { summarize, accuracyBy, medianTime } from '../engine/scoring.js';
 import { RINKS } from '../engine/rink.js';
 import { syncStatus } from '../core/sync.js';
 import * as cards from './cards.js';
+import { holdoutCards, keysOf } from '../content.js';
+import { play } from './play.js';
 
 export function render(view, rerender, cloud) {
   const sum = summarize(state.sessions);
@@ -21,7 +23,23 @@ export function render(view, rerender, cloud) {
       h('div.kv',
         h('div', h('b', sum.points), h('span', 'очков')),
         h('div', h('b', sum.streak), h('span', 'серия')),
-        h('div', h('b', med ? (med / 1000).toFixed(1) + ' с' : '—'), h('span', 'на решение')))));
+        h('div', h('b', med ? (med / 1000).toFixed(1) + ' с' : '—'), h('span', 'на верное решение')))));
+
+  // Контрольный срез: незнакомые ситуации без подсказок раз в 4 недели
+  {
+    const tests = state.sessions.filter(s => s.module === 'test' && s.items.length >= 5);
+    const last = tests[tests.length - 1];
+    const days = last ? Math.floor((Date.now() - last.startedAt) / 864e5) : null;
+    const ready = !last || days >= 28;
+    const pct = s => Math.round(s.items.filter(i => i.verdict === 'best').length / s.items.length * 100);
+    view.append(h('div.h2', 'Контрольный срез'),
+      h('div.panel',
+        h('p.muted.small', { style: { marginTop: 0 } }, `${holdoutCards().length} ситуаций, которых нет в тренировках. Без подсказок и разборов — проверка, переносится ли мышление на новые эпизоды.`),
+        tests.length ? h('div.list', tests.slice(-4).map(s => h('div.li', h('span', new Date(s.startedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })), h('span.r', pct(s) + '%')))) : null,
+        h('button.btn.small' + (ready ? '.primary' : ''), { style: { marginTop: '12px' }, disabled: !ready,
+          onclick: () => play(holdoutCards().flatMap(keysOf), { module: 'test', test: true, onDone: rerender }) },
+          ready ? 'Пройти срез' : `Следующий — через ${28 - days} дн.`)));
+  }
 
   cards.collection(view);
 

@@ -54,6 +54,18 @@ export const ICONS = {
 
 export const icon = name => svg(ICONS[name]);
 
+/* Площадка на весь экран: кнопка в углу, повторное нажатие возвращает обратно. */
+export function zoomable(wrap) {
+  const b = h('button.zoom-btn', { type: 'button', 'aria-label': 'Площадка на весь экран', onclick: e => {
+    e.stopPropagation();
+    const on = wrap.classList.toggle('rink-full');
+    b.textContent = on ? '✕' : '⤢';
+    document.body.classList.toggle('no-scroll', on);
+  } }, '⤢');
+  wrap.append(b);
+  return b;
+}
+
 let toastTimer;
 export function toast(text) {
   document.querySelectorAll('.toast').forEach(t => t.remove());

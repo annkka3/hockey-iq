@@ -14,7 +14,7 @@ const el = (tag, attrs = {}, parent) => {
 let uid = 0;
 
 /* Подписи на фишках: свои — по амплуа, у соперников подписан только вратарь. */
-export const LABELS = { C: 'Ц', LW: 'ЛК', RW: 'ПК', LD: 'ЛЗ', RD: 'ПЗ', G: 'В', F: '', D: '' };
+export const LABELS = { C: 'Ц', LW: 'ЛП', RW: 'ПП', LD: 'ЛЗ', RD: 'ПЗ', G: 'ВР', F: '', D: '' };
 
 /* Разметка площадки (статичная). */
 export function drawRink(g, r, id) {
