@@ -46,6 +46,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
     inner.append(h('div.play-top', h('button.x', { onclick: close, 'aria-label': 'Закрыть' }, icon('close')), dots()));
     if (variant) inner.append(h('div.ctx', h('b', variant.label), variant.sub ? h('span', variant.sub) : null));
     inner.append(h('div.q-meta', (lib.phase[card.phase] || {}).name || ''));
+    if (card.story) inner.append(h('p.story', card.story));
     inner.append(h('div.q', card.question.text));
 
     const wrap = h('div.rink-wrap');
@@ -147,6 +148,8 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       h('p.explain', opt.id === 'timeout' ? 'Время вышло. На льду у тебя тоже нет лишней секунды — решай по первому взгляду.' : explainOf(card, variant, opt)),
       bestText,
       pr ? h('div.principle', h('b', pr.name), h('span', pr.line)) : null,
+      card.cue ? h('p.cue', h('b', 'Куда смотреть: '), card.cue) : null,
+      card.ice ? h('p.ice', h('b', 'На льду: '), card.ice) : null,
       actions);
     if (timeMs && v === 'best' && timeMs < 4000 && !preview) box.querySelector('.plus').textContent += ' · быстро';
     inner.append(box);

@@ -47,6 +47,25 @@ export function render(view, rerender) {
       h('div', { style: { marginTop: '10px' } }, meter(week / goal.target, true))));
   }
 
+  // План недели: у каждого дня свой фокус (по мотивам плана из LAB 4.0)
+  const PLAN = [
+    { t: 'Вижу до приёма', s: 'Открытый игрок + тренировка дня', go: '#/react' },
+    { t: 'Выйти из давления', s: 'Миссия «Под прессингом»', go: '#/decks' },
+    { t: 'Угол и вратарь', s: 'Бросок: геометрия и режим «Угол»', go: '#/shot' },
+    { t: 'Центр без шайбы', s: 'Миссия «Центр без шайбы» + колода', go: '#/decks' },
+    { t: 'Насмотренность', s: 'Два разбора розыгрышей', go: '#/decks' },
+    { t: 'Матчевый день', s: 'Блиц: 10 решений по 4 секунды', go: '#/react' },
+    { t: 'Повтор', s: 'Только тренировка дня', go: '#/today' },
+  ];
+  const wd = (new Date().getDay() + 6) % 7;
+  const monday = new Date(); monday.setDate(monday.getDate() - wd);
+  const dayDone = k => { const d = new Date(monday); d.setDate(monday.getDate() + k); const rec = sum.days[today(d)]; return rec && rec.items > 0; };
+  view.append(h('div.h2', 'План недели'),
+    h('div.plan', PLAN.map((p, k) => h('div.plan-day' + (k === wd ? '.now' : dayDone(k) ? '.done' : ''),
+      h('div.dn', ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'][k]),
+      h('div', h('b', p.t), h('span', p.s)),
+      k === wd ? h('button.btn.small', { onclick: () => { location.hash = p.go; } }, 'Начать') : dayDone(k) ? h('span', { style: { color: 'var(--good)' } }, '✓') : null))));
+
   const pr = lib.principles[dayIndex() % lib.principles.length];
   if (pr) {
     view.append(h('div.h2', 'Принцип дня'),

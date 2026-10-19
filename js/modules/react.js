@@ -4,11 +4,12 @@ import { h, icon, toast } from '../ui.js';
 import { Scene } from '../engine/render.js';
 import { tween, wait, cancelAll, ease } from '../engine/anim.js';
 import { lib, keysOf } from '../content.js';
-import { state, startSession, logItem, finishSession } from '../core/state.js';
+import { state, startSession, logItem, finishSession, setProfile } from '../core/state.js';
 import { buildQueue } from '../engine/srs.js';
 import { play } from './play.js';
 
 const DRILLS = [
+  { id: 'scan', name: 'Открытый игрок', line: 'Кадр на время показа. Потом скажи, кто из партнёров был свободнее всех.', rounds: 8 },
   { id: 'memory', name: 'Память', line: 'Кадр на пару секунд. Потом найди его среди похожих.', rounds: 8 },
   { id: 'track', name: 'Слежение', line: 'Запомни три шайбы и держи их взглядом, пока все двигаются.', rounds: 6 },
   { id: 'predict', name: 'Предсказание', line: 'Игрок едет и пропадает. Покажи, где он будет через секунду.', rounds: 8 },
@@ -17,7 +18,10 @@ const DRILLS = [
 ];
 
 export function render(view, rerender) {
-  view.append(h('div.h1', 'Реакция'), h('p.lead', 'Короткие тренажёры на внимание, память и скорость. По 1–2 минуты, лучше перед тренировкой.'));
+  view.append(h('div.h1', 'Реакция'), h('p.lead', 'Смотри. Запоминай. Предугадывай. По 1–2 минуты, лучше перед тренировкой.'));
+  const ex = expo();
+  const t = h('div.toggle', { style: { '--n': 5 } }, [['auto', 'Авто'], [1, '1 с'], [2, '2 с'], [3, '3 с'], [5, '5 с']].map(([v, l]) => h('button', { class: ex === v ? 'on' : '', onclick: () => { setProfile({ expo: v }); rerender(); } }, l)));
+  view.append(h('div.expo', h('span', 'Время показа'), h('div.grow', t)));
   for (const d of DRILLS) {
     const best = bestOf(d.id);
     view.append(h('div.panel.deck', { onclick: () => start(d, rerender) },
@@ -67,11 +71,78 @@ function start(d, rerender) {
         h('div.muted', fo.length ? `мс в среднем · лучшее ${Math.min(...fo)} мс` : 'верно'),
         h('div.row', { style: { marginTop: '28px' } }, h('button.btn.grow', { onclick: () => { close(); start(d, rerender); } }, 'Ещё раз'), h('button.btn.primary.grow', { onclick: close }, 'Готово'))));
   }
-  const run = () => ({ memory, track, predict, faceoff })[d.id](ctx);
+  const run = () => ({ scan, memory, track, predict, faceoff })[d.id](ctx);
   run();
 }
 
 const pick = a => a[Math.floor(Math.random() * a.length)];
+export const expo = () => state.profile.expo ?? 'auto';
+
+/* ---------- Открытый игрок: кто из партнёров свободнее всех ---------- */
+function freeness(f, foes) { return Math.min(...foes.map(o => Math.hypot(o.x - f.x, o.y - f.y))); }
+
+function genScan(r) {
+  // три партнёра, соперники опекают двоих плотно, третий свободен с запасом
+  for (let tries = 0; tries < 200; tries++) {
+    const friends = ['А', 'Б', 'В'].map(label => ({ label, x: rnd(-12, 12), y: rnd(8, 52) }));
+    if (friends.some((a, i) => friends.some((b, j) => i < j && Math.hypot(a.x - b.x, a.y - b.y) < 9))) continue;
+    const ans = Math.floor(Math.random() * 3);
+    const tight = r < 3 ? [1.6, 2.6] : [2.2, 3.4];
+    const foes = [];
+    friends.forEach((f, i) => {
+      if (i === ans) return;
+      const a = Math.random() * 7, d = rnd(...tight);
+      foes.push({ x: Math.max(-13.5, Math.min(13.5, f.x + Math.cos(a) * d)), y: Math.max(3, Math.min(57, f.y + Math.sin(a) * d)) });
+    });
+    const free = friends[ans];
+    const far = r < 3 ? 7 : 5;
+    const a = Math.random() * 7;
+    foes.push({ x: Math.max(-13.5, Math.min(13.5, free.x + Math.cos(a) * far)), y: Math.max(3, Math.min(57, free.y + Math.sin(a) * far)) });
+    if (r >= 4) foes.push({ x: rnd(-12, 12), y: rnd(8, 52) });
+    const fr = friends.map(f => freeness(f, foes));
+    const best = fr.indexOf(Math.max(...fr));
+    const sorted = [...fr].sort((x, y) => y - x);
+    if (best === ans && sorted[0] - sorted[1] > (r < 3 ? 2.5 : 1.5)) return { friends, foes, answer: ans };
+  }
+  return lib.scans[0];
+}
+
+async function scan(c) {
+  const r = c.round();
+  const pat = r < 2 && lib.scans.length ? lib.scans[(Math.random() * lib.scans.length) | 0] : genScan(r);
+  const fr0 = pat.friends.map(x => freeness(x, pat.foes));
+  pat.answer = fr0.indexOf(Math.max(...fr0));
+  const show = expo() === 'auto' ? Math.max(1.2, 3 - r * 0.2) : expo();
+  const card = { title: 'Открытый игрок', view: 'full', question: { kind: 'choice' }, options: [],
+    us: pat.friends.map((f, i) => ({ id: 'f' + i, role: 'LW', label: f.label, x: f.x, y: f.y })),
+    them: pat.foes.map((f, i) => ({ id: 'e' + i, role: 'F', x: f.x, y: f.y })) };
+  c.inner.innerHTML = '';
+  const title = h('div.q', 'Кто из партнёров свободнее всех?');
+  c.inner.append(c.top(), h('div.q-meta', 'Открытый игрок'), title);
+  const wrap = h('div.rink-wrap'); c.inner.append(wrap);
+  const sc = new Scene(wrap, card, { anim: false });
+  const bar = h('div.meter', { style: { marginTop: '12px' } }, h('i', { style: { width: '100%' } }));
+  c.inner.append(bar);
+  await tween(show * 1000, k => { bar.firstChild.style.width = (100 - k * 100) + '%'; }, t => t);
+  if (!c.live.on) return;
+  bar.remove();
+  sc.svg.style.opacity = 0.06;
+  title.textContent = 'Картинка исчезла. Где был свободный партнёр?';
+  const box = h('div.opts');
+  const t0 = performance.now();
+  pat.friends.forEach((f, i) => box.append(h('button.opt', { 'data-k': f.label, onclick: () => {
+    box.classList.add('locked');
+    const ok = i === pat.answer;
+    box.children[i].classList.add(ok ? 'v-best' : 'v-bad');
+    box.children[pat.answer].classList.add('v-best');
+    sc.svg.style.opacity = 1;
+    const ds = pat.friends.map(x => freeness(x, pat.foes));
+    c.log(ok, { timeMs: Math.round(performance.now() - t0), exposure: show });
+    c.inner.append(h('p.explain', `Ближайший соперник: ${pat.friends.map((x, k) => `${x.label} — ${ds[k].toFixed(1)} м`).join(', ')}. Свободнее всех ${pat.friends[pat.answer].label}: туда и пас, и открывание.`),
+      h('button.btn.primary.block', { style: { marginTop: '14px' }, onclick: c.next }, 'Дальше'));
+  } }, 'Игрок ' + f.label)));
+  c.inner.append(box);
+}
 const rnd = (a, b) => a + Math.random() * (b - a);
 const clone = o => JSON.parse(JSON.stringify(o));
 
@@ -81,7 +152,7 @@ async function memory(c) {
   const card = clone(pick(lib.cards));
   for (const e of [...(card.us || []), ...(card.them || [])]) delete e.from;
   if (card.puck) delete card.puck.from;
-  const show = Math.max(1.2, 3 - r * 0.25);
+  const show = expo() === 'auto' ? Math.max(1.2, 3 - r * 0.25) : expo();
   c.inner.innerHTML = '';
   c.inner.append(c.top(), h('div.q-meta', 'Память'), h('div.q', 'Запомни расстановку'));
   const wrap = h('div.rink-wrap'); c.inner.append(wrap);
@@ -210,7 +281,7 @@ async function predict(c) {
   c.inner.append(c.top(), h('div.q-meta', 'Предсказание'), title);
   const wrap = h('div.rink-wrap'); c.inner.append(wrap);
   const sc = new Scene(wrap, card, { anim: false });
-  const show = 1.2;
+  const show = expo() === 'auto' ? 1.2 : Math.max(0.8, expo() * 0.6);
   await tween(show * 1000, k => sc.place('C', sc.pt(at(k * show))), t => t);
   if (!c.live.on) return;
   sc.ents.C.node.style.opacity = 0;

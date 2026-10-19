@@ -161,7 +161,9 @@ def main():
         sys.exit(1)
 
     plays = build_plays(principles, phases)
-    out = {'plays': plays, 'version': max(c['version'] for c in cards) if cards else 0, 'built': None, **content, 'cards': cards}
+    scans_path = os.path.join(SRC, 'scans.json')
+    scans = json.load(open(scans_path, encoding='utf-8')) if os.path.exists(scans_path) else []
+    out = {'scans': scans, 'plays': plays, 'version': max(c['version'] for c in cards) if cards else 0, 'built': None, **content, 'cards': cards}
     stamp = hashlib.md5(json.dumps(cards, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:8]
     out['built'] = stamp
     os.makedirs(os.path.dirname(OUT), exist_ok=True)

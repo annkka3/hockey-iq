@@ -22,6 +22,7 @@ export function render(view, rerender) {
       h('div.cnt', `${learned}/${keys.length}`)));
   }
 
+  film.list(view, rerender, { title: 'Миссии', mission: true });
   film.list(view, rerender, { title: 'Разборы розыгрышей', kind: 'film' });
   film.list(view, rerender, { title: 'На два хода вперёд', kind: 'branch' });
 

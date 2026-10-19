@@ -449,3 +449,16 @@ input[type=range] { width: 100%; accent-color: var(--cyan); height: 28px; }
 .film-cap { margin-top: 12px; min-height: 48px; font-size: 15px; font-weight: 600; padding: 10px 14px; border-radius: 14px; background: var(--panel); border-left: 3px solid var(--cyan); }
 .film-cap.in { animation: rise .3s ease; }
 .film-q { font-family: var(--display); font-weight: 700; font-size: 16px; margin-top: 14px; }
+
+.story { margin: 10px 0 -4px; color: var(--muted); font-size: 14px; }
+.cue, .ice { margin: 10px 0 0; font-size: 14px; padding: 10px 12px; border-radius: 12px; background: rgba(120, 200, 255, 0.05); border: 1px solid var(--stroke); }
+.cue b { color: var(--cyan); } .ice b { color: var(--gold); }
+.expo { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.expo > span { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.plan { display: grid; gap: 8px; }
+.plan-day { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--stroke); background: rgba(120, 200, 255, 0.04); }
+.plan-day .dn { font-family: var(--display); font-weight: 800; font-size: 12px; color: var(--dim); }
+.plan-day b { display: block; font-size: 14px; } .plan-day span { font-size: 12px; color: var(--muted); }
+.plan-day.now { border-color: var(--stroke-hi); background: rgba(63, 215, 255, 0.1); box-shadow: 0 0 24px -10px rgba(63, 215, 255, .8); }
+.plan-day.now .dn { color: var(--cyan); }
+.plan-day.done .dn { color: var(--good); }
