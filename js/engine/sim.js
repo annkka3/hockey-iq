@@ -9,6 +9,13 @@
 
 const W = 30, L = 60, R = 8.5;
 const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const REACH = 4.5; // м — сколько игрок успевает проехать за окно реакции (~0,3 с задержки + 0,7 с хода)
+/* Ближайшая к p точка отрезка a→b (линия передачи). */
+const onSegment = (p, a, b) => {
+  const vx = b.x - a.x, vy = b.y - a.y, L = vx * vx + vy * vy || 1;
+  const t = Math.max(0.15, Math.min(0.85, ((p.x - a.x) * vx + (p.y - a.y) * vy) / L));
+  return { x: a.x + vx * t, y: a.y + vy * t };
+};
 const clampIce = (p, m = 1) => {
   let x = Math.max(-W / 2 + m, Math.min(W / 2 - m, p.x)), y = Math.max(m, Math.min(L - m, p.y));
   const cx = x < -W / 2 + R ? -W / 2 + R : x > W / 2 - R ? W / 2 - R : null;
@@ -43,7 +50,8 @@ export function positions(card, moveLists) {
   return { pos, team, lastPuck };
 }
 
-/* verdict: best | ok | bad | timeout. Возвращает ходы реакции (все одновременно). */
+/* Возвращает ходы реакции (все одновременно). Вердикт ответа не используется: последствия считаются
+   только из расстановки после хода — правила одинаковы для любого варианта. */
 export function respond(card, moveLists, verdict) {
   if (!card || !card.puck) return [];
   const { pos, team, lastPuck } = positions(card, moveLists);
@@ -54,7 +62,6 @@ export function respond(card, moveLists, verdict) {
   const skaters = side => Object.keys(team).filter(id => team[id] === side && role[id] !== 'G');
   const free = id => id !== meId && !moved.has(id);
   const P = pos.puck;
-  const v = verdict === 'timeout' ? 'bad' : verdict;
   const out = [];
   const push = (who, to, extra = {}) => { if (to && d(pos[who], to) > 0.6) { out.push({ who, to: [to.x, to.y], kind: 'skate', ...extra }); pos[who] = to; } };
 
@@ -70,42 +77,44 @@ export function respond(card, moveLists, verdict) {
 
   const near = (from, ids) => ids.filter(free).sort((a, b) => d(pos[a], from) - d(pos[b], from));
 
+  // Одинаковые правила для любого выбора: окно реакции ~1 с, за которое игрок проезжает не больше REACH.
+  // Хороший выбор не «замедляет» соперника — он ставит шайбу и игроков так, что тот физически не успевает.
+  const ourAll = skaters('us'); // включая «Я»: его новая позиция уже учтена
   if (carrier && team[carrier] === 'us') {
     const opp = near(P, skaters('them'));
-    // 1. давление: при лучшем решении соперник не успевает
-    const gap = v === 'best' ? 3.2 : v === 'ok' ? 2 : 0.9;
-    if (opp[0]) push(opp[0], approach(pos[opp[0]], P, gap));
-    // 2. партнёр уезжает в свободное место — ближайший к шайбе, кроме «Я» и владельца
+    // 1. давление на шайбу: ближайший соперник едет к владельцу, сколько успеет
+    if (opp[0]) push(opp[0], approach(pos[opp[0]], P, 0.9, REACH));
+    // 2. поддержка: партнёр без шайбы (не «Я» и не владелец) уезжает в свободное место
     const mates = near(P, skaters('us')).filter(id => id !== carrier);
     const helper = mates[0];
     if (helper) push(helper, openSpot(pos, team, role, P, pos[helper], 'us'));
-    // 3. второй соперник смещается в линию паса к открытому партнёру (или к «Я»)
-    const target = helper ? pos[helper] : pos[meId];
-    if (opp[1] && target) {
-      const mid = { x: (P.x + target.x) / 2, y: (P.y + target.y) / 2 };
-      const share = v === 'best' ? 0.35 : v === 'ok' ? 0.6 : 0.95;
-      const a = pos[opp[1]];
-      push(opp[1], clampIce({ x: a.x + (mid.x - a.x) * share, y: a.y + (mid.y - a.y) * share }));
-    }
+    // 3. перекрытие передачи: второй соперник едет к ближайшей точке линии паса на самого открытого из «Я» и помощника
+    const targets = [helper, meId].filter(id => id && id !== carrier && pos[id]);
+    const openness = id => Math.min(...skaters('them').map(o => d(pos[o], pos[id])));
+    const target = targets.sort((a, b) => openness(b) - openness(a))[0];
+    if (opp[1] && target) push(opp[1], approach(pos[opp[1]], onSegment(pos[opp[1]], P, pos[target]), 0.3, REACH));
   } else if (carrier && team[carrier] === 'them') {
-    // соперник с шайбой развивает атаку на наши ворота; при хорошем решении — почти не продвигается
+    // защита: наш ближайший свободный игрок прижимает владельца
+    const ours = near(pos[carrier], skaters('us'));
+    if (ours[0]) push(ours[0], approach(pos[ours[0]], pos[carrier], 1.2, REACH));
+    // владелец едет на наши ворота: если рядом наш игрок (в том числе «Я»), продвинуться почти не может
     const goal = { x: 0, y: 4 };
-    const adv = v === 'best' ? 1.2 : v === 'ok' ? 3 : 5.5;
+    const press = Math.min(...ourAll.map(id => d(pos[id], pos[carrier])));
     if (free(carrier)) {
-      const to = approach(pos[carrier], goal, 0, adv);
+      const to = approach(pos[carrier], goal, 0, press < 2.5 ? 1.2 : REACH * 0.85);
       if (to) { push(carrier, to, { carry: true }); pos.puck = to; }
     }
     // его партнёр открывается в свободное место
     const theirs = near(pos[carrier], skaters('them')).filter(id => id !== carrier);
     if (theirs[0]) push(theirs[0], openSpot(pos, team, role, pos[carrier], pos[theirs[0]], 'them'));
-    // наш ближайший (кроме «Я») прижимает владельца
-    const ours = near(pos[carrier], skaters('us'));
-    if (ours[0]) push(ours[0], approach(pos[ours[0]], pos[carrier], v === 'bad' ? 3 : 1.4));
   } else {
-    // ничья шайба: гонка за подбор — при хорошем решении первыми успевают наши
+    // ничья шайба: кто ближе по времени, тот и успевает; второй останавливается рядом
+    const tOurs = Math.min(...ourAll.map(id => d(pos[id], P)));
     const ours = near(P, skaters('us')), theirs = near(P, skaters('them'));
-    if (ours[0]) push(ours[0], approach(pos[ours[0]], P, v === 'bad' ? 2.5 : 0.6));
-    if (theirs[0]) push(theirs[0], approach(pos[theirs[0]], P, v === 'bad' ? 0.6 : 2.5));
+    const tThem = theirs[0] ? d(pos[theirs[0]], P) : Infinity;
+    const weWin = tOurs <= tThem;
+    if (ours[0]) push(ours[0], approach(pos[ours[0]], P, weWin ? 0.6 : 1.5, REACH));
+    if (theirs[0]) push(theirs[0], approach(pos[theirs[0]], P, weWin ? 1.5 : 0.6, REACH));
   }
   goalies(card, pos, role, team, pos.puck, push);
   return group(out);

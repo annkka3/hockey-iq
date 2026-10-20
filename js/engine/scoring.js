@@ -62,6 +62,7 @@ export function summarize(sessions, now = new Date()) {
     const rec = days[d] || (days[d] = { sec: 0, items: 0 });
     rec.sec += s.durationSec || 0;
     rec.items += (s.items || []).length;
+    rec.decisions = (rec.decisions || 0) + (s.module === 'test' ? 0 : (s.items || []).filter(it => it.cardId).length);
     for (const it of s.items || []) points += itemPoints(it);
   }
   const counted = d => days[d] && days[d].items >= DAY_MIN_ITEMS;
@@ -78,7 +79,7 @@ export function summarize(sessions, now = new Date()) {
     best = Math.max(best, run);
     prev = x;
   }
-  return { points, streak, bestStreak: Math.max(best, streak), days, todayItems: days[t] ? days[t].items : 0, rank: rankOf(points) };
+  return { points, streak, bestStreak: Math.max(best, streak), days, todayItems: days[t] ? days[t].items : 0, todayDecisions: days[t] ? days[t].decisions || 0 : 0, rank: rankOf(points) };
 }
 
 /* Точность по полю (principle, phase): доля лучших решений, окно — последние 30 дней. */

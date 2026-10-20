@@ -1,6 +1,6 @@
 /* Связка модулей: ошибка в ситуации → похожая ситуация на тот же принцип → разбор розыгрыша по теме →
    тренажёр, который качает нужный навык (бросок или внимание). Всё строится из уже размеченного содержания. */
-import { lib, keysOf } from '../content.js';
+import { lib, keysOf, inTraining } from '../content.js';
 import { state } from '../core/state.js';
 
 /* Принцип → режим «Броска» или тренажёр внимания. */
@@ -20,7 +20,7 @@ const recent = () => {
 /* Похожая ситуация: тот же принцип, иначе тот же блок программы и фаза; не контрольная и не сегодняшняя. */
 export function similar(card, exclude = new Set()) {
   const seen = recent();
-  const ok = c => c.id !== card.id && !c.holdout && !exclude.has(c.id);
+  const ok = c => c.id !== card.id && inTraining(c) && !exclude.has(c.id);
   const tiers = [
     lib.cards.filter(c => ok(c) && c.principle === card.principle),
     lib.cards.filter(c => ok(c) && c.track && c.track === card.track && c.phase === card.phase),

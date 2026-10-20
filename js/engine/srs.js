@@ -18,7 +18,8 @@ export function review(rec, verdict, now = Date.now()) {
   const r = { box: 0, due: today(), seen: 0, best: 0, ok: 0, bad: 0, lapses: 0, hist: '', ...rec };
   r.seen++;
   r[verdict] = (r[verdict] || 0) + 1;
-  r.hist = (r.hist + verdict[0]).slice(-8);
+  // история ответов: + лучшее, ~ можно, x ошибка (раньше best и bad оба писались «b» — поле hist больше не используется)
+  r.h2 = ((r.h2 || '') + (verdict === 'best' ? '+' : verdict === 'ok' ? '~' : 'x')).slice(-8);
   if (verdict === 'best') r.box = Math.min(r.box + 1, INTERVALS.length - 1);
   else if (verdict === 'ok') r.box = Math.max(r.box, 1);
   else { r.box = 1; r.lapses++; }
@@ -28,7 +29,7 @@ export function review(rec, verdict, now = Date.now()) {
 }
 
 /* «Застрявшая»: две ошибки среди трёх последних ответов или три срыва. */
-export const isStuck = r => !!r && ((r.hist.slice(-3).match(/b/g) || []).length >= 2 || r.lapses >= 3);
+export const isStuck = r => !!r && (((r.h2 || '').slice(-3).match(/x/g) || []).length >= 2 || r.lapses >= 3);
 export const isLearned = r => !!r && r.box >= 3;
 
 /* Набор на сессию: сначала просроченные, затем новые (не больше maxNew), добивка — самые слабые, потом снова новые. */

@@ -5,10 +5,11 @@
    Формат шага: { caption, moves: [...как в карточках] } или { pause: { question, options: [{ label, correct, explain, then?: [шаги] }] } }. */
 import { h, icon, zoomable } from '../ui.js';
 import { Scene } from '../engine/render.js';
-import { cancelAll, wait, tween, lerp } from '../engine/anim.js';
+import { cancelAll, wait, tween, lerp, setTimeScale } from '../engine/anim.js';
 import { lib } from '../content.js';
 import { state, startSession, logItem, finishSession } from '../core/state.js';
 import { shuffle } from './play.js';
+import { povSwitch } from './povui.js';
 
 export function list(view, rerender, { title = 'Разборы розыгрышей', kind = null, mission = false } = {}) {
   const plays = (lib.plays || []).filter(p => (!kind || (p.kind || 'film') === kind) && !!p.mission === mission);
@@ -39,7 +40,7 @@ export function watch(play, rerender) {
   root.appendChild(inner); document.body.appendChild(root); document.body.style.overflow = 'hidden';
   const session = startSession('film:' + play.id);
   let alive = true, ended = false, speed = 1;
-  const close = () => { alive = false; cancelAll(); if (!ended) { ended = true; finishSession(session); } root.remove(); document.body.style.overflow = ''; if (rerender) rerender(); };
+  const close = () => { alive = false; cancelAll(); if (!ended) { ended = true; finishSession(session); } try { scene.destroy(); } catch (e) {} root.remove(); document.body.style.overflow = ''; if (rerender) rerender(); };
 
   const cap = h('div.film-cap');
   const panel = h('div');
@@ -52,6 +53,7 @@ export function watch(play, rerender) {
 
   const scene = new Scene(wrap, play, { rink: state.profile.rink, anim: true });
   zoomable(wrap);
+  povSwitch(wrap, scene); // вид «Глазами» и в разборах/миссиях
 
   async function runSteps(steps) {
     for (const st of steps) {
@@ -77,11 +79,10 @@ export function watch(play, rerender) {
     await tween(750 / speed, k => { for (const id in to) scene.place(id, { x: lerp(from[id].x, to[id].x, k), y: lerp(from[id].y, to[id].y, k) }); });
   }
 
-  /* замедление: растягиваем твины, подменяя performance.now на время игры */
+  /* замедление: общий масштаб времени анимаций, без подмены системных часов */
   async function slow(fn) {
-    const real = performance.now.bind(performance), t0 = real();
-    performance.now = () => t0 + (real() - t0) * speed;
-    try { await fn(); } finally { performance.now = real; }
+    setTimeScale(speed);
+    try { await fn(); } finally { setTimeScale(1); }
   }
 
   function ask(p) {

@@ -39,9 +39,10 @@ export const STANCES = {
 export const BODY = { parts: [{ id: 'body', w: [-0.3, 0.3], h: [0, 1.45], speed: 0 }, { id: 'stick', w: [-0.6, 0.6], h: [0, 0.08], speed: 0 }] }; // в стойке, согнувшись
 
 export const LEVELS = {
-  junior: { name: 'Юниоры', reaction: 0.26, move: 0.85 },
-  pro: { name: 'Сильный', reaction: 0.21, move: 1 },
-  nhl: { name: 'НХЛ', reaction: 0.17, move: 1.15 },
+  // уровни — учебные наборы параметров, не откалиброванные модели реальных вратарей
+  junior: { name: 'Учебный', reaction: 0.26, move: 0.85 },
+  pro: { name: 'Сложный', reaction: 0.21, move: 1 },
+  nhl: { name: 'Эксперт', reaction: 0.17, move: 1.15 },
 };
 
 /* Правильная позиция вратаря: на линии от центра ворот к шайбе, на глубине depth от линии ворот. */
@@ -109,6 +110,19 @@ export function goalAngle(S) {
 
 export const flightTime = (S, target, speedMs) => Math.hypot(target.u - S.x, GOAL.y - S.y, target.v) / speedMs;
 
+/* Рама ворот: штанги и перекладина — трубы радиусом POST_R, внутренний край — по створу 1,83 × 1,22.
+   Шайба — диск радиусом PUCK_R. Гол только если шайба целиком проходит внутри рамы;
+   задела трубу — «штанга»; дальше — мимо. Проверяется центр шайбы в плоскости ворот. */
+export const POST_R = 0.03;
+export function frameHit(p) {
+  const au = Math.abs(p.u);
+  const inU = au <= GOAL.half - PUCK_R, inV = p.v >= 0 && p.v <= GOAL.h - PUCK_R;
+  if (inU && inV) return null;
+  const touchPost = au > GOAL.half - PUCK_R && au < GOAL.half + 2 * POST_R + PUCK_R && p.v < GOAL.h + 2 * POST_R + PUCK_R;
+  const touchBar = p.v > GOAL.h - PUCK_R && p.v < GOAL.h + 2 * POST_R + PUCK_R && au < GOAL.half + 2 * POST_R + PUCK_R;
+  return touchPost || touchBar ? 'post' : 'miss';
+}
+
 /* Исход броска.
    goalie: { pos, stance, level, delay } — delay: доп. задержка (заслон, переезд после паса).
    shift: где силуэт вратаря в момент выпуска (для королевской дороги он ещё едет).
@@ -116,25 +130,23 @@ export const flightTime = (S, target, speedMs) => Math.hypot(target.u - S.x, GOA
 export function resolveShot({ S, target, speedMs, goalie, others = [], rng = Math.random }) {
   const T = flightTime(S, target, speedMs);
   const out = { T, target };
-  if (target.v < 0 || target.v > GOAL.h + PUCK_R || Math.abs(target.u) > GOAL.half + PUCK_R) {
-    const post = Math.abs(Math.abs(target.u) - GOAL.half) < PUCK_R * 1.6 && target.v <= GOAL.h + PUCK_R
-      || Math.abs(target.v - GOAL.h) < PUCK_R * 1.6 && Math.abs(target.u) <= GOAL.half + PUCK_R;
-    return { ...out, result: post ? 'post' : 'miss' };
-  }
+  const fr = frameHit(target);
+  if (fr) return { ...out, result: fr };
   for (const b of others) if (b.parts.some(p => inPoly(target, p.pts))) return { ...out, result: 'blocked', by: b.who };
   const lvl = LEVELS[goalie.level] || LEVELS.pro;
   const reaction = lvl.reaction + (goalie.delay || 0) + (rng() - 0.5) * 0.06;
   const sil = goalie.sil;
   if (sil.some(p => inPoly(target, p.pts))) return { ...out, result: 'save', reason: 'body', reaction };
-  const left = Math.max(0, T - reaction);
   let best = null;
   for (const p of sil) {
+    // время до встречи шайбы с этой частью вратаря, а не до линии ворот: p.scale = (линия ворот − бросок) / (вратарь − бросок)
+    const left = Math.max(0, T / Math.max(1, p.scale) - reaction);
     const d = Math.max(0, polyDist(target, p.pts) - PUCK_R);
     const reach = left * p.speed * lvl.move * p.scale;
     const margin = reach - d;
-    if (!best || margin > best.margin) best = { part: p.id, d, reach, margin };
+    if (!best || margin > best.margin) best = { part: p.id, d, reach, margin, left, tc: T / Math.max(1, p.scale) };
   }
-  return { ...out, result: best.margin >= 0 ? 'save' : 'goal', reaction, part: best.part, need: best.d, reach: best.reach };
+  return { ...out, result: best.margin >= 0 ? 'save' : 'goal', reaction, part: best.part, need: best.d, reach: best.reach, left: best.left, tc: best.tc };
 }
 
 /* Разброс: чем сильнее бросок, тем шире (метры на плоскости ворот).
@@ -156,7 +168,13 @@ export const TRACK = {
 };
 /* Бросок в движении: шайба сохраняет боковую скорость игрока. Руки игрока гасят большую часть сноса
    (клюшка и кисть), в модели остаётся DRIFT от полного сноса vx·T. */
-export const DRIFT = 0.12;
+export const DRIFT = 0; // прицел — желаемая точка попадания: поправку на движение руки делают сами (см. «Как считается»)
 export const SKATE = 5.2; // м/с — скорость игрока поперёк слота в режиме «В движении»
+
+/* Воспроизводимая случайность: у каждого броска свой номер (seed) — по нему бросок можно повторить один в один. */
+export function rngFrom(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
 
 export const kmh = ms => Math.round(ms * 3.6);

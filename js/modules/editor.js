@@ -30,7 +30,7 @@ export function list(view, rerender) {
 
 function blankCard() {
   return {
-    id: 'm-' + Date.now().toString(36), version: 1, deck: 'mine', phase: 'oz', principle: lib.principles[0].id, difficulty: 2,
+    id: 'm-' + Date.now().toString(36), version: 1, deck: 'mine', phase: 'oz', principle: lib.principles[0].id, track: 'read', difficulty: 2,
     title: '', view: 'oz', question: { kind: 'choice', text: '' },
     us: [{ id: 'C', role: 'C', me: true, x: 0, y: 46 }], them: [{ id: 'g', role: 'G', x: 0, y: 55.1 }], puck: { x: 1, y: 45.5 },
     options: [{ id: 'a', label: '', verdict: 'best', explain: '' }, { id: 'b', label: '', verdict: 'bad', explain: '' }],
@@ -126,6 +126,7 @@ function edit(card, rerender) {
     if (c.options.filter(o => o.verdict === 'best').length !== 1) errs.push('одно лучшее решение');
     if (errs.length) { toast('Заполните: ' + errs.join(', ')); return; }
     c.version = (card ? card.version : 0) + 1;
+    if (!c.track) c.track = 'read';
     saveCard(c);
     syncMine(state.cards);
     toast('Сохранено'); close();
@@ -138,6 +139,7 @@ function edit(card, rerender) {
     h('label.field', { style: { marginTop: '12px' } }, h('span', 'Название'), title),
     h('label.field', h('span', 'Вопрос'), q),
     h('div.row', h('label.field.grow', h('span', 'Фаза'), phase), h('label.field.grow', h('span', 'Принцип'), princ)),
+    (lib.program ? h('label.field', h('span', 'Блок программы U15'), h('select.input', { onchange: e => { c.track = e.target.value; } }, lib.program.tracks.map(t => h('option', { value: t.id, selected: t.id === (c.track || 'read') }, t.name)))) : null),
     h('div.h2', 'Варианты'), optsBox,
     h('div.row', { style: { marginTop: '16px' } },
       card ? h('button.btn.ghost.small', { style: { color: 'var(--bad)' }, onclick: () => { deleteCard(c.id); syncMine(state.cards); toast('Удалено'); close(); } }, 'Удалить') : null,

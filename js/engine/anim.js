@@ -8,6 +8,10 @@ export const ease = {
 };
 
 let token = 0;
+let scale = 1;
+
+/* Глобальная скорость анимации (замедленный просмотр в разборах): 0,5 — вдвое медленнее. */
+export function setTimeScale(k) { scale = k > 0 ? k : 1; }
 
 /* Отменяет все идущие твины (например, игрок свайпнул «пропустить»). */
 export function cancelAll() { token++; }
@@ -16,10 +20,11 @@ export function tween(ms, onFrame, curve = ease.inOut) {
   const my = token;
   return new Promise(resolve => {
     if (ms <= 0) { onFrame(1); resolve(true); return; }
-    const t0 = performance.now();
+    let last = performance.now(), el = 0;
     const step = now => {
       if (my !== token) { onFrame(1); resolve(false); return; }
-      const t = Math.min(1, (now - t0) / ms);
+      el += Math.max(0, now - last) * scale; last = now;
+      const t = Math.min(1, el / ms);
       onFrame(curve(t));
       if (t < 1) requestAnimationFrame(step); else resolve(true);
     };

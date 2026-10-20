@@ -136,8 +136,8 @@ function reviewBlock(view, rerender) {
   for (const c of lib.cards) {
     const r = rev[c.id] || {};
     const tg = h('div.toggle', { style: { '--n': 3 } });
-    for (const [v, t] of [['ok', 'Так'], ['no', 'Не так'], ['other', 'У нас иначе']]) {
-      tg.append(h('button', { type: 'button', class: r.v === v ? 'on' : '', onclick: e => { save(c.id, { v }); tg.querySelectorAll('button').forEach(b => b.classList.remove('on')); e.currentTarget.classList.add('on'); } }, t));
+    for (const [v, t] of [['ok', 'Проверено'], ['no', 'Не так'], ['other', 'У нас иначе']]) {
+      tg.append(h('button', { type: 'button', class: r.v === v ? 'on' : '', onclick: e => { const off = (state.parent.reviews || {})[c.id]?.v === v; save(c.id, { v: off ? null : v }); tg.querySelectorAll('button').forEach(b => b.classList.remove('on')); if (!off) e.currentTarget.classList.add('on'); } }, t));
     }
     const note = h('input.input', { placeholder: 'Комментарий', value: r.note || '', onchange: e => save(c.id, { note: e.target.value.trim() }) });
     box.append(h('div.review-row',
@@ -147,7 +147,7 @@ function reviewBlock(view, rerender) {
   }
   view.append(h('div.h2', `Ревью карточек · ${done}/${lib.cards.length}`),
     h('div.panel',
-      h('p.muted.small', { style: { marginTop: 0 } }, 'Посмотрите ситуацию и отметьте, верно ли решение для его команды. Ответы в предпросмотре не идут в статистику.'),
+      h('p.muted.small', { style: { marginTop: 0 } }, 'Посмотрите ситуацию и отметьте, верно ли решение для его команды. «Не так» и «У нас иначе» сразу убирают ситуацию из тренировок, пока её не исправят; повторное нажатие снимает отметку. Ответы в предпросмотре не идут в статистику.'),
       h('details', h('summary.btn.small', { style: { listStyle: 'none' } }, 'Открыть список'), h('div', { style: { marginTop: '12px' } }, box)),
       h('button.btn.primary.small', { style: { marginTop: '12px' }, onclick: () => copyReviews() }, 'Скопировать отзывы')));
 }

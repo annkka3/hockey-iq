@@ -15,7 +15,7 @@ export const allKeys = () => trainCards().flatMap(keysOf);
 export function render(view, rerender) {
   const sum = summarize(state.sessions);
   const size = cfg().size;
-  const done = sum.todayItems;
+  const done = sum.todayDecisions; // в «тренировку дня» идут только решения в ситуациях, не броски и не тренажёры
   const nick = state.profile.nick;
   const start = () => play(programQueue(cfg()), { module: 'today', onDone: rerender });
 

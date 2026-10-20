@@ -183,13 +183,14 @@ def main():
             if cid not in seen: warn(cid, 'в program.json есть id, которого нет среди карточек')
     order = {d['id']: i for i, d in enumerate(content['decks'])}
     cards.sort(key=lambda c: (c.get('difficulty', 2), order.get(c['deck'], 99)))
+    # сначала все виды содержания, потом общая проверка — ошибки в розыгрышах тоже останавливают запись
+    plays = build_plays(principles, phases)
     for w in warnings: print('  внимание:', w)
     if errors or ('--strict' in sys.argv and warnings):
         for e in errors: print('  ОШИБКА:', e)
         print(f'Сборка остановлена: {len(errors)} ошибок.')
         sys.exit(1)
 
-    plays = build_plays(principles, phases)
     scans_path = os.path.join(SRC, 'scans.json')
     scans = json.load(open(scans_path, encoding='utf-8')) if os.path.exists(scans_path) else []
     out = {'scans': scans, 'plays': plays, 'version': max(c['version'] for c in cards) if cards else 0, 'built': None, **content, 'cards': cards}

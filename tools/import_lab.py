@@ -113,6 +113,9 @@ def main():
         cid = f'lab-{i:02d}'
         n = notes.get(cid, {})
         us, them = team(s['players'])
+        # численность: заметки могут убрать игроков (например, сделать настоящее меньшинство 4 × 5)
+        us = [e for e in us if e['id'] not in n.get('remove_us', [])]
+        them = [e for e in them if e['id'] not in n.get('remove_them', [])]
         me = next(e for e in us if e.get('me'))
         puck = pt(s['puck'])
         has_puck = math.hypot(puck[0] - me['x'], puck[1] - me['y']) < 2.2
@@ -120,9 +123,10 @@ def main():
         options = []
         for k, label in enumerate(s['options']):
             good = k == s['correct']
-            o = {'id': 'abc'[k], 'label': label,
-                 'verdict': 'best' if good else n.get('verdicts', {}).get('abc'[k], 'bad'),
-                 'explain': s['why'] if good else n.get('explain', {}).get('abc'[k], 'Не лучший выбор. ' + s['why'])}
+            oid = 'abc'[k]
+            o = {'id': oid, 'label': n.get('labels', {}).get(oid, label),
+                 'verdict': 'best' if good else n.get('verdicts', {}).get(oid, 'bad'),
+                 'explain': n.get('best_explain', s['why']) if good else n.get('explain', {}).get(oid, 'Не лучший выбор. ' + s['why'])}
             if good and path:
                 o['moves'] = [{'who': 'C', 'to': list(p), 'carry': has_puck} for p in path]
             options.append(o)

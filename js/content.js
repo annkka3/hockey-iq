@@ -26,7 +26,12 @@ const hash = s => { let x = 2166136261; for (const ch of s) { x ^= ch.charCodeAt
 function markHoldout() {
   for (const c of lib.cards) if (c.pack === 'core' && !c.variants && c.question.kind === 'choice' && hash(c.id) % 6 === 0) c.holdout = true;
 }
-export const trainCards = () => lib.cards.filter(c => !c.holdout);
+/* Редакторский статус: ситуации, которые родитель или тренер отметил «Не так» / «У нас иначе», не выдаются в тренировки,
+   пока их не исправят (отметку можно снять). Контрольные — тоже не в тренировках. */
+lib.excluded = new Set();
+export function setExcluded(reviews = {}) { lib.excluded = new Set(Object.keys(reviews).filter(id => reviews[id] && (reviews[id].v === 'no' || reviews[id].v === 'other'))); }
+export const inTraining = c => !c.holdout && !lib.excluded.has(c.id);
+export const trainCards = () => lib.cards.filter(inTraining);
 export const holdoutCards = () => lib.cards.filter(c => c.holdout);
 
 export function addPack(cards, pack) {

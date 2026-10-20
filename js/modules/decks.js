@@ -1,7 +1,7 @@
 /* «Решения»: компактный каталог из вкладок — Колоды, Миссии, Разборы, Принципы.
    Сверху — «Над чем работать»: самые слабые принципы, одна кнопка до тренировки. */
 import { h, icon, meter } from '../ui.js';
-import { lib, keysOf, cardsOfDeck, trainCards } from '../content.js';
+import { lib, keysOf, cardsOfDeck, trainCards, inTraining } from '../content.js';
 import { state } from '../core/state.js';
 import { buildQueue, isLearned } from '../engine/srs.js';
 import { accuracyBy } from '../engine/scoring.js';
@@ -14,7 +14,7 @@ const TABS = [['program', 'U15'], ['decks', 'Колоды'], ['missions', 'Ми�
 let tab = 'program';
 
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-const keysFor = cards => cards.filter(c => !c.holdout).flatMap(keysOf);
+const keysFor = cards => cards.filter(inTraining).flatMap(keysOf);
 
 export function render(view, rerender) {
   view.append(h('div.h1', 'Решения'));

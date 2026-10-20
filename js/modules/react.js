@@ -8,6 +8,7 @@ import { state, startSession, logItem, finishSession, setProfile } from '../core
 import { buildQueue } from '../engine/srs.js';
 import { play } from './play.js';
 import { Pov } from '../engine/pov.js';
+import { viewWindow, RINKS } from '../engine/rink.js';
 
 const DRILLS = [
   { id: 'shoulder', group: 'ice', name: 'Плечевой осмотр', line: 'Ты видишь лёд своими глазами. Пара секунд, чтобы оглянуться через плечо, — потом скажи, кто открыт.', rounds: 6 },
@@ -164,7 +165,7 @@ const clone = o => JSON.parse(JSON.stringify(o));
 /* ---------- Память: кадр карточки → найди его среди четырёх ---------- */
 async function memory(c) {
   const r = c.round();
-  const card = clone(pick(lib.cards));
+  const card = clone(pick(trainCards())); // контрольные ситуации не показываем нигде, кроме среза
   for (const e of [...(card.us || []), ...(card.them || [])]) delete e.from;
   if (card.puck) delete card.puck.from;
   const show = expo() === 'auto' ? Math.max(1.2, 3 - r * 0.25) : expo();
@@ -179,14 +180,23 @@ async function memory(c) {
   // варианты: оригинал и три с одним сдвинутым игроком
   const shift = r < 3 ? 6 : r < 6 ? 4.5 : 3.2;
   const variants = [card];
-  while (variants.length < 4) {
+  let guard = 0;
+  while (variants.length < 4 && guard++ < 80) {
     const v = clone(card);
     const all = [...v.us, ...v.them].filter(e => e.role !== 'G');
     const e = all[Math.floor(Math.random() * all.length)];
-    const a = Math.random() * Math.PI * 2;
-    e.x = Math.max(-13, Math.min(13, e.x + Math.cos(a) * shift)); e.y = Math.max(2, Math.min(58, e.y + Math.sin(a) * shift));
-    variants.push(v);
+    const { y0, y1 } = viewWindow(card.view || 'full', RINKS.iihf);
+    // сдвиг должен остаться в видимой части площадки и не прятаться под другим игроком — иначе варианты не различить
+    let moved = false;
+    for (let t = 0; t < 24 && !moved; t++) {
+      const a = Math.random() * Math.PI * 2, nx = e.x + Math.cos(a) * shift, ny = e.y + Math.sin(a) * shift;
+      if (Math.abs(nx) > 13 || ny < y0 + 1.5 || ny > y1 - 1.5) continue;
+      if (all.some(o => o !== e && Math.hypot(o.x - nx, o.y - ny) < 2)) continue;
+      e.x = nx; e.y = ny; moved = true;
+    }
+    if (moved) variants.push(v);
   }
+  if (variants.length < 3) return memory(c);
   variants.sort(() => Math.random() - 0.5);
   c.inner.querySelector('.q').textContent = 'Какой кадр ты видел?';
   const grid = h('div.mem-grid');
@@ -244,8 +254,9 @@ async function track(c) {
   if (!c.live.on) return;
   mode = 'move'; title.textContent = 'Следи…';
   const v = speed * W;
+  let last = performance.now();
   await tween(6000, (k) => {
-    const dt = 1 / 60;
+    const nowT = performance.now(), dt = Math.min(0.05, (nowT - last) / 1000); last = nowT; // реальное время кадра: одинаково на 60 и 120 Гц
     for (const p of pucks) {
       if (Math.random() < 0.02) { const a = Math.atan2(p.vy, p.vx) + rnd(-0.8, 0.8); p.vx = Math.cos(a); p.vy = Math.sin(a); }
       p.x += p.vx * v * dt; p.y += p.vy * v * dt;
@@ -288,15 +299,16 @@ async function predict(c) {
     return { x: p1.x + R0 * (Math.sin(a) - Math.sin(ang)), y: p1.y - R0 * (Math.cos(a) - Math.cos(ang)) };
   };
   // начало подальше от борта, чтобы траектория осталась на льду
-  const end = at(2.2);
-  if (Math.abs(end.x) > 13 || end.y < 3 || end.y > 57) return predict(c);
+  // вся траектория — показ и точка ответа через секунду после него — должна остаться на льду
+  const showS = expo() === 'auto' ? 1.2 : Math.max(0.8, expo() * 0.6);
+  for (let t = 0; t <= showS + 1.001; t += 0.1) { const q = at(t); if (Math.abs(q.x) > 13 || q.y < 3 || q.y > 57) return predict(c); }
   const card = { title: 'Предсказание', view: 'full', us: [{ id: 'C', role: 'C', me: true, x: p1.x, y: p1.y }], them: [], question: { kind: 'tap' }, options: [] };
   c.inner.innerHTML = '';
   const title = h('div.q', 'Следи за игроком');
   c.inner.append(c.top(), h('div.q-meta', 'Предсказание'), title);
   const wrap = h('div.rink-wrap'); c.inner.append(wrap);
   const sc = new Scene(wrap, card, { anim: false });
-  const show = expo() === 'auto' ? 1.2 : Math.max(0.8, expo() * 0.6);
+  const show = showS;
   await tween(show * 1000, k => sc.place('C', sc.pt(at(k * show))), t => t);
   if (!c.live.on) return;
   sc.ents.C.node.style.opacity = 0;
@@ -332,12 +344,17 @@ async function faceoff(c) {
   const delay = rnd(1000, 3200);
   const timer = setTimeout(() => {
     if (state !== 'wait') return;
-    state = 'drop'; tDrop = performance.now();
+    state = 'drop';
     pad.classList.add('drop');
+    // отсчёт — с касания льда: конец анимации падения (transitionend), а не её начало
+    const puck = pad.querySelector('.fo-puck');
+    const landed = () => { if (!tDrop) tDrop = performance.now(); };
+    puck.addEventListener('transitionend', landed, { once: true });
+    setTimeout(landed, 160); // страховка, если событие не придёт
   }, delay);
   pad.onclick = () => {
     if (state === 'done') return;
-    if (state === 'wait') {
+    if (state === 'wait' || (state === 'drop' && !tDrop)) {
       clearTimeout(timer); state = 'done';
       pad.classList.add('foul'); title.textContent = 'Рано! Судья выгнал с точки';
       c.log(false, { foul: true });
@@ -379,7 +396,9 @@ async function shoulder(c) {
     const a = Math.random() * 7, d = i === ans ? rnd(6, 8) : rnd(1.5, 2.4);
     foes.push({ x: Math.max(-13.5, Math.min(13.5, f.x + Math.cos(a) * d)), y: Math.max(3, Math.min(57, f.y + Math.sin(a) * d)) });
   });
-  const free = friends.map(f => Math.min(...foes.map(o => Math.hypot(o.x - f.x, o.y - f.y))));
+  // свободен — далеко от соперников и с открытой линией паса от «Я» (соперник не стоит на ней)
+  const laneGap = (f, o) => { const vx = f.x - me.x, vy = f.y - me.y, L = vx * vx + vy * vy || 1; const t = Math.max(0, Math.min(1, ((o.x - me.x) * vx + (o.y - me.y) * vy) / L)); return Math.hypot(o.x - (me.x + vx * t), o.y - (me.y + vy * t)); };
+  const free = friends.map(f => Math.min(...foes.map(o => Math.min(Math.hypot(o.x - f.x, o.y - f.y), laneGap(f, o) * 1.5))));
   const answer = free.indexOf(Math.max(...free));
   const card = { title: 'Осмотр', view: 'full', question: { kind: 'choice' }, options: [],
     us: [{ id: 'C', role: 'C', me: true, ...me }, ...friends.map((f, i) => ({ id: 'f' + i, role: 'LW', label: f.label, x: f.x, y: f.y }))],
@@ -391,13 +410,15 @@ async function shoulder(c) {
   const sc = new Scene(wrap, card, { anim: false });
   const pov = new Pov(wrap, sc);
   pov.follow = false; pov.heading = 0;
+  const seen = new Set();
+  const watch = setInterval(() => (pov.seen || []).forEach(id => seen.add(id)), 50);
   const bar = h('div.pov-bar',
     h('button.btn.small', { onclick: () => pov.shoulder(-1) }, '↶ Через левое плечо'),
     h('button.btn.small', { onclick: () => pov.shoulder(1) }, 'Через правое ↷'));
   c.inner.append(bar);
   await timerBar(c, showTime(r, 3.6) + 0.8);
   if (!c.live.on) return;
-  pov.destroy(); bar.remove();
+  clearInterval(watch); pov.destroy(); bar.remove();
   sc.svg.style.opacity = 0.05; wrap.classList.remove('pov-only');
   title.textContent = 'Кто был свободен?';
   const box = h('div.opts'), t0 = performance.now();
@@ -406,7 +427,10 @@ async function shoulder(c) {
     const ok = i === answer;
     box.children[i].classList.add(ok ? 'v-best' : 'v-bad'); box.children[answer].classList.add('v-best');
     sc.svg.style.opacity = 1;
-    c.log(ok, { timeMs: Math.round(performance.now() - t0) });
+    const looked = seen.has('f' + answer);
+    c.log(ok, { timeMs: Math.round(performance.now() - t0), looked });
+    c.inner.append(h('p.small', { style: { margin: '10px 0 0', color: looked ? 'var(--good)' : 'var(--gold)' } },
+      looked ? `Ты посмотрел туда, где был ${friends[answer].label}.` : `Ты так и не посмотрел туда, где был ${friends[answer].label}${ok ? ' — угадал, а не увидел' : ''}.`));
     c.inner.append(h('p.explain', ok ? 'Увидел. Осмотр до приёма шайбы — и ты знаешь, куда отдать, ещё не получив её.'
       : `Свободен был ${friends[answer].label}${slots[answer].a ** 2 > 1 ? ' — за плечом. Его не видно, если не оглянуться' : ''}. Перед приёмом — быстрый взгляд через оба плеча.`));
     nextBtn(c, () => sc.destroy());
@@ -418,7 +442,7 @@ async function shoulder(c) {
 const ROLE_NAME = { LW: 'ЛН', RW: 'ПН', LD: 'ЛЗ', RD: 'ПЗ' };
 async function mates(c) {
   const r = c.round();
-  const pool = lib.cards.filter(x => (x.us || []).filter(e => ROLE_NAME[e.role]).length >= 3);
+  const pool = trainCards().filter(x => (x.us || []).filter(e => ROLE_NAME[e.role]).length >= 3);
   const card = clone(pick(pool));
   for (const e of [...(card.us || []), ...(card.them || [])]) delete e.from;
   if (card.puck) delete card.puck.from;
@@ -582,9 +606,9 @@ async function danger(c) {
     sc.offTap();
     const ok = best === ans, ms = Math.round(performance.now() - t0);
     sc.ents['e' + ans].node.classList.add('hot');
-    c.log(ok && ms < 6000, { timeMs: ms });
+    c.log(ok, { timeMs: ms, slow: ms >= 6000 }); // правильность и время — отдельно
     const o = them[ans], free = Math.min(...ours.map(q => Math.hypot(q.x - o.x, q.y - o.y)));
-    title.textContent = ok ? `Верно · ${(ms / 1000).toFixed(1)} с` : 'Не он';
+    title.textContent = ok ? `Верно · ${(ms / 1000).toFixed(1)} с${ms >= 6000 ? ' — верно, но долго' : ''}` : 'Не он';
     c.inner.append(h('p.explain', ans === 0 ? 'Опаснее всех тот, у кого шайба: он близко к воротам и под хорошим углом.'
       : `Главная угроза — соперник ${o.y < 13 && Math.abs(o.x) < 4 ? 'в слоте' : 'без опеки'}: до ближайшего нашего ${free.toFixed(1)} м, ворота рядом. Шайба у борта не забивает — забивает тот, кому её отдадут.`));
     nextBtn(c, () => sc.destroy());

@@ -1,6 +1,6 @@
 /* Точка входа: контент, облако (если подключено), каркас, маршруты. */
 import { h, icon, ICONS, NAV_ICONS, svg, sheet } from './ui.js';
-import { loadContent, syncMine } from './content.js';
+import { loadContent, syncMine, setExcluded } from './content.js';
 import { state, setProfile, onChange } from './core/state.js';
 import { attach, signedIn } from './core/sync.js';
 import { summarize } from './engine/scoring.js';
@@ -82,7 +82,7 @@ function onboarding() {
 }
 
 async function boot() {
-  try { await loadContent(); syncMine(state.cards || {}); onChange(() => syncMine(state.cards || {})); }
+  try { await loadContent(); syncMine(state.cards || {}); setExcluded(state.parent.reviews); onChange(() => { syncMine(state.cards || {}); setExcluded(state.parent.reviews); }); }
   catch (e) { app.append(h('div.panel', { style: { margin: '20px' } }, 'Не загрузился контент. Проверь интернет и открой снова.')); return; }
   if (window.HK_CONFIG.firebase) {
     try {

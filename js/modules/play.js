@@ -136,13 +136,14 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       results.push(v);
       if (v !== 'best') errCards.push(card);
       inner.querySelector('.dots').replaceWith(dots());
+      if (ended) return; // экран закрыт во время анимации — ничего не записываем
       if (!preview) {
         if (!test) answer(keys[i], v); // контрольный срез не меняет интервалы повторения
         logItem(session, { cardId: card.id, key: keys[i], variant: variant ? variant.key : null, deck: card.deck, phase: card.phase,
                            principle: card.principle, track: card.track || null, answer: opt.id, verdict: v, timeMs,
                            ...(rd ? { read: readOk, readMs } : {}), ...extra });
       }
-      if (card.question.kind === 'tap') scene.showZones(card.options, opt.id, o => verdictOf(card, variant, o));
+      if (card.question.kind === 'tap' && !test) scene.showZones(card.options, opt.id, o => verdictOf(card, variant, o));
       wrap.querySelectorAll('.read-cap').forEach(n => n.remove());
       await scene.play(opt.moves || []);
       // последствия: соперники и партнёры реагируют на решение (в контрольном срезе — без подсказок)
@@ -158,7 +159,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
           box.classList.add('locked');
           box.querySelectorAll('.opt').forEach(x => x.classList.add('dim'));
           b.classList.remove('dim');
-          b.classList.add('v-' + verdictOf(card, variant, o));
+          b.classList.add(test ? 'read-pick' : 'v-' + verdictOf(card, variant, o)); // в контроле — без подсказки цветом
           decide(o);
         } }, o.label);
         box.append(b);
@@ -222,7 +223,9 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
         sm ? h('button.link-chip', { onclick: () => openMode(sm) }, h('b', 'Бросок'), h('span', SHOT_NAME[sm])) : null,
         dm ? h('button.link-chip', { onclick: () => openDrill(dm) }, h('b', 'Тренажёр'), h('span', DRILL_NAME[dm])) : null,
       ].filter(Boolean);
-      if (items.length) link = h('div.links', h('div.kicker', 'Закрепить'), h('div.link-row', items));
+      // одна главная рекомендация, остальное — по запросу, чтобы не сбивать с тренировки
+      if (items.length) link = h('div.links', h('div.kicker', 'Закрепить'), items[0],
+        items.length > 1 ? h('details.link-more', h('summary', 'Ещё способы'), h('div.link-row', items.slice(1))) : null);
     }
     const box = h('div.result',
       h('div.verdict', h('span.tag.' + v, TAG[v]), preview ? null : h('span.plus', `+${pts}`)),

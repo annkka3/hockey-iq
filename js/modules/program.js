@@ -16,13 +16,25 @@ export function programQueue({ size = 10, maxNew = 5 } = {}) {
   const T = tracks();
   const all = trainCards();
   if (!T.length) return buildQueue(all.flatMap(keysOf), state.progress, { size, maxNew });
-  const raw = T.map(t => t.share * size), quota = raw.map(Math.floor);
+  // квоты: целая часть доли, а оставшиеся места — блокам, которым за 7 дней досталось меньше всего относительно цели.
+  // Так 25/25/20/20/10 выдерживаются на неделе, а не округляются каждый день одинаково.
+  const from = Date.now() - 7 * 864e5, done = {};
+  let N = 0;
+  for (const s of state.sessions) if (s.startedAt > from) for (const it of s.items || []) if (it.track) { done[it.track] = (done[it.track] || 0) + 1; N++; }
+  const quota = T.map(t => Math.floor(t.share * size));
   let left = size - quota.reduce((a, b) => a + b, 0);
-  raw.map((r, i) => [r - Math.floor(r), i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => { if (left-- > 0) quota[i]++; });
+  const deficit = i => T[i].share * (N + size) - (done[T[i].id] || 0) - quota[i];
+  while (left-- > 0) { let bi = 0; for (let i = 1; i < T.length; i++) if (deficit(i) > deficit(bi)) bi = i; quota[bi]++; }
   const q = [];
+  // свой эпизод из матча («Мои моменты») — одно место в смене, если он есть к повторению
+  const mine = all.filter(c => c.deck === 'mine');
+  if (mine.length) {
+    const mk = buildQueue(mine.flatMap(keysOf), state.progress, { size: 1, maxNew: 1 });
+    if (mk.length) { q.push(mk[0]); const ti = T.findIndex(t => t.id === (lib.byId[mk[0].split('|')[0]] || {}).track); if (ti >= 0 && quota[ti] > 0) quota[ti]--; else { const bi = quota.indexOf(Math.max(...quota)); quota[bi]--; } }
+  }
   T.forEach((t, i) => {
     if (!quota[i]) return;
-    const keys = all.filter(c => c.track === t.id).flatMap(keysOf);
+    const keys = all.filter(c => c.track === t.id && c.deck !== 'mine').flatMap(keysOf);
     q.push(...buildQueue(keys, state.progress, { size: quota[i], maxNew: Math.max(1, Math.round(maxNew * t.share * 2)) }));
   });
   if (q.length < size) for (const k of buildQueue(all.flatMap(keysOf), state.progress, { size: size * 2, maxNew: size })) { if (q.length >= size) break; if (!q.includes(k)) q.push(k); }
