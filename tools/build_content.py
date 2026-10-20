@@ -150,6 +150,7 @@ def main():
                 err(cid, 'лучших решений не одно')
             # ориентация корпуса и крюка: face — направление [dx, dy], stick — точка крюка на льду
             for e in c.get('us', []) + c.get('them', []):
+                if e.get('hand') not in (None, 'L', 'R'): err(cid, f'{e["id"]}: hand — L или R')
                 f = e.get('face')
                 if f is not None and (not isinstance(f, list) or len(f) != 2 or (f[0] == 0 and f[1] == 0)): err(cid, f'{e["id"]}: face должен быть [dx, dy]')
                 st = e.get('stick')

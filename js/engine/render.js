@@ -168,7 +168,7 @@ export class Scene {
     const a = Math.atan2(fx, fy);
     en.angle = a; en.faceW = { x: fx, y: fy };
     en.rot.setAttribute('transform', `rotate(${(a * 180 / Math.PI).toFixed(1)})`);
-    const lefty = en.team === 'us' && en.data.me ? (this.hand || 'L') === 'L' : true;
+    const lefty = this.handOf(en) === 'L';
     let bx = en.goalie ? 0 : (lefty ? -0.5 : 0.5), by = en.goalie ? -0.87 : -1.15;
     if (stickWorld) {
       const sp = this.pt({ x: stickWorld[0], y: stickWorld[1] }), dx = (sp.x - en.home.x) / this.tok, dy = (sp.y - en.home.y) / this.tok;
@@ -185,6 +185,18 @@ export class Scene {
       const ang = sh + (bx < 0 ? -90 : 90);
       en.blade.setAttribute('transform', `translate(${bx.toFixed(2)} ${by.toFixed(2)}) rotate(${ang.toFixed(1)})`);
     }
+  }
+
+  /* Хват: у «Я» — из профиля, у остальных — из карточки (hand), иначе устойчиво по id: ~60 % левшей, как в российском и канадском хоккее. */
+  handOf(en) {
+    if (en.hand) return en.hand;
+    const e = en.data;
+    let hnd = e.hand;
+    if (!hnd && e.me) hnd = this.hand || 'L';
+    if (!hnd) { let x = 7; for (const ch of (this.card.id || '') + e.id) x = (x * 31 + ch.charCodeAt(0)) >>> 0; hnd = x % 10 < 6 ? 'L' : 'R'; }
+    en.hand = hnd;
+    if (en.goalie && en.rot && hnd === 'R') en.rot.querySelectorAll('.glove, .blocker').forEach(n => n.setAttribute('transform', 'scale(-1 1)')); // ловушка на другой руке
+    return hnd;
   }
 
   orientAll() {

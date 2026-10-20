@@ -643,3 +643,4 @@ input.power::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; b
 .why-box { margin-top: 14px; padding: 12px; border-radius: 14px; border: 1px solid var(--stroke-hi); background: rgba(63,215,255,.05); animation: rise .25s ease; }
 .why-box .kicker { font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); }
 .why-box .q { font-size: 16px; margin: 6px 0 4px; }
+.rink-wrap.pov-on .pov-btn { left: auto; right: 14px; }

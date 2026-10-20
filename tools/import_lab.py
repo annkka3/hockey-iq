@@ -119,7 +119,7 @@ def main():
         # ориентация корпуса и крюка из заметок
         for e in us + them:
             for k, v in n.get('ents', {}).get(e['id'], {}).items():
-                if k in ('face', 'stick'): e[k] = v
+                if k in ('face', 'stick', 'hand'): e[k] = v
         me = next(e for e in us if e.get('me'))
         puck = pt(s['puck'])
         has_puck = math.hypot(puck[0] - me['x'], puck[1] - me['y']) < 2.2
