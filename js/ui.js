@@ -50,6 +50,7 @@ export const ICONS = {
   match: I('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14"/><circle cx="12" cy="12" r="2.5"/>'),
   shield: I('<path d="M12 3 5 6v6c0 4 3 7 7 9 4-2 7-5 7-9V6z"/>'),
   back: I('<path d="M15 6l-6 6 6 6"/>'),
+  target: I('<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>'),
 };
 
 export const icon = name => svg(ICONS[name]);

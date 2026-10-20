@@ -4,6 +4,7 @@ import { RINKS, boardsPath } from '../engine/rink.js';
 import { drawRink } from '../engine/render.js';
 import { tween, cancelAll, ease } from '../engine/anim.js';
 import * as P from '../engine/shot.js';
+import { goaliePartImage, ready as imgReady, preload as preloadSprites } from '../engine/sprites.js';
 import { state, startSession, logItem, finishSession, setProfile } from '../core/state.js';
 
 const R = RINKS.iihf;
@@ -274,7 +275,9 @@ function runGame(mode, set, rerender) {
 
     const dots = h('div.dots', Array.from({ length: SHOTS }, (_, k) => h('i', { class: k < results.length ? (results[k] ? 'best' : 'bad') : k === results.length ? 'now' : '' })));
     inner.append(h('div.play-top', h('button.x', { onclick: close }, icon('close')), dots),
-      h('div.q-meta', `${mode.name} · ${pro ? 'профи' : 'новичок'}`), h('div.q', { style: { fontSize: '16px', margin: '8px 0' } }, mode.line));
+      h('div.q-meta', `${mode.name} · ${pro ? 'профи' : 'новичок'}`), h('div.q', { style: { margin: '6px 0 2px' } }, 'Куда направишь бросок?'),
+      h('p.muted.small', { style: { margin: '0 0 10px' } }, mode.line));
+    preloadSprites();
 
     // мини-карта
     const map = sv('svg', { viewBox: '-15.6 -0.6 31.2 21', class: 'rink-svg mini-map' });
@@ -290,7 +293,10 @@ function runGame(mode, set, rerender) {
     const face = h('canvas.goal-cv');
     const hud = h('div.shot-hud');
     const stage = h('div.shot-stage', face);
-    inner.append(h('div.rink-wrap', { style: { padding: '6px' } }, map), stage);
+    const pre = h('div.pre-val', '—');
+    const preBox = h('div.pre-box', h('span', 'До броска'), pre);
+    inner.append(stage, h('div.shot-row', h('div.mini-wrap', map), preBox));
+    pre.textContent = `${Math.round(P.goalAngle(sc.S))}° · ${Math.hypot(sc.S.x, P.GOAL.y - sc.S.y).toFixed(1)} м`; pre.className = 'pre-val small';
 
     // протяжка: шайба на дорожке, тянешь влево-вправо
     if (mode.id === 'drag') {
@@ -310,25 +316,29 @@ function runGame(mode, set, rerender) {
     // управление
     const live$ = h('div.shot-live');
     let shootBtn = null;
+    const replayBtn = h('button.btn.shot-replay', { disabled: true }, '↻ Повтор');
     if (!pro) {
       const pLab = h('b');
       const slider = h('input.power', { type: 'range', min: 0, max: 1, step: 0.01, value: power,
         oninput: e => { power = +e.target.value; setProfile({ shot: { ...shotSet(), power } }); syncPower(); } });
-      const syncPower = () => { const k = kOf(power); pLab.textContent = `${Math.round(k)} км/ч · точно в прицел`; slider.style.setProperty('--c', powerColor(power)); };
+      const syncPower = () => { const k = kOf(power); pLab.textContent = `${Math.round(k)} км/ч`; slider.style.setProperty('--p', (power * 100) + '%'); };
       syncPower();
-      shootBtn = h('button.btn.primary.grow', { disabled: true, onclick: () => { if (aim && phase === 'aim') tryShoot(aim, power); } }, 'Бросок');
-      inner.append(h('div.panel.power-box', h('div.row', h('span.muted.small.grow', 'Сила'), pLab), slider, h('div.row', { style: { marginTop: '10px' } }, live$, shootBtn)));
-    } else inner.append(h('div.panel.power-box', live$));
+      shootBtn = h('button.btn.primary.shot-go', { disabled: true, onclick: () => { if (aim && phase === 'aim') tryShoot(aim, power); } }, 'Бросок');
+      inner.append(h('div.power-box', h('div.row', h('span.kicker.grow', 'Сила броска'), pLab), slider),
+        h('div.shot-hint', icon('target'), live$), h('div.shot-btns', replayBtn, shootBtn));
+    } else inner.append(h('div.shot-hint', icon('target'), live$), h('div.shot-btns', replayBtn));
     inner.append(hud);
 
     const ctx = face.getContext('2d');
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const fit = () => { const w = face.clientWidth; face.width = w * dpr; face.height = w * 0.62 * dpr; face.style.height = w * 0.62 + 'px'; };
+    // Холст — вид от бросающего: арена, лёд, ворота. Плоскость ворот занимает центр: ширина ворот — 42 % кадра,
+    // линия льда на 64 % высоты. toPx/toUV — единственный пересчёт плоскости ворот ↔ экран (и для прицела, и для вратаря).
+    const fit = () => { const w = face.clientWidth; face.width = w * dpr; face.height = w * 0.86 * dpr; face.style.height = w * 0.86 + 'px'; };
     fit();
-    const U0 = -1.55, U1 = 1.55, V0 = -0.1, V1 = 1.82;
-    const toPx = (u, v) => ({ x: (u - U0) / (U1 - U0) * face.width, y: face.height - (v - V0) / (V1 - V0) * face.height });
-    const toUV = (x, y) => ({ u: clamp(U0 + x / face.clientWidth * (U1 - U0), -1.4, 1.4), v: clamp(V0 + (1 - y / face.clientHeight) * (V1 - V0), 0, 1.75) });
-    const mpx = face.width / (U1 - U0); // пикселей в метре
+    const GW = 0.42, YICE = 0.64;
+    const mpx = face.width * GW / P.GOAL.w; // пикселей в метре в плоскости ворот
+    const toPx = (u, v) => ({ x: face.width / 2 + u * mpx, y: face.height * YICE - v * mpx });
+    const toUV = (x, y) => ({ u: clamp((x * dpr - face.width / 2) / mpx, -1.4, 1.4), v: clamp((face.height * YICE - y * dpr) / mpx, 0, 1.75) });
     const LIFT = 56; // прицел над пальцем, CSS-пиксели
     let finger = null;
 
@@ -379,112 +389,147 @@ function runGame(mode, set, rerender) {
       puckDot.setAttribute('cx', scr(puck).x + (ready ? 0.7 : 0)); puckDot.setAttribute('cy', scr(puck).y - (ready ? 0.6 : 0));
     }
 
+    /* Кадр: арена → лёд → сетка и рама ворот → вратарь (по частям модели) → прицел → шайба → своя клюшка. */
     function frame(sil, opts = {}) {
-      const W = face.width, Hh = face.height;
+      const W = face.width, Hh = face.height, yI = Hh * YICE;
+      const dist = Math.hypot(S.x, P.GOAL.y - S.y) || 8;
+      const persp = d => dist / (dist + d);        // уменьшение для предметов за плоскостью ворот
+      const hor = yI - 1.6 * mpx;                    // горизонт на высоте глаз
+      const atDepth = d => hor + (yI - hor) * persp(d); // линия льда на глубине d за воротами
       ctx.clearRect(0, 0, W, Hh);
-      const g = ctx.createLinearGradient(0, 0, 0, Hh); g.addColorStop(0, '#0B1A2C'); g.addColorStop(1, '#14304C');
+      // арена: тёмный свод со светильниками, трибуны-стена, стекло, борт с жёлтым кантом
+      const g = ctx.createLinearGradient(0, 0, 0, yI); g.addColorStop(0, '#081426'); g.addColorStop(1, '#1A3558');
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, Hh);
-      const ice = toPx(0, 0).y; ctx.fillStyle = '#E7F1F8'; ctx.fillRect(0, ice, W, Hh - ice);
-      ctx.fillStyle = 'rgba(63,160,255,.35)'; const c0 = toPx(-1.83, 0), c1 = toPx(1.83, 0);
-      ctx.beginPath(); ctx.ellipse((c0.x + c1.x) / 2, ice, (c1.x - c0.x) / 2, Hh * 0.06, 0, 0, Math.PI); ctx.fill();
-      const a = toPx(-P.GOAL.half, P.GOAL.h), b = toPx(P.GOAL.half, 0);
-      ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
-      ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1 * dpr;
-      for (let u = -0.8; u <= 0.81; u += 0.16) { const p0 = toPx(u, 0), p1 = toPx(u, P.GOAL.h); ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke(); }
-      for (let v = 0.15; v < P.GOAL.h; v += 0.15) { const p0 = toPx(-P.GOAL.half, v), p1 = toPx(P.GOAL.half, v); ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke(); }
-      const polyF = (pts, fill, stroke, sh) => {
-        ctx.beginPath(); pts.forEach((p, i) => { const q = toPx(p.u + (sh ? sh.u : 0), p.v + (sh ? sh.v : 0)); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); }); ctx.closePath();
+      ctx.fillStyle = 'rgba(235,245,255,.85)';
+      for (let k = 0; k < 5; k++) ctx.fillRect(W * (0.12 + k * 0.18), Hh * 0.05, W * 0.06, 2.5 * dpr);
+      const bBase = atDepth(4), bTop = bBase - 1.07 * mpx * persp(4), gTop = bBase - 2.4 * mpx * persp(4);
+      ctx.fillStyle = '#16305A'; ctx.fillRect(0, gTop - 30 * dpr, W, 30 * dpr);
+      for (let x = 0; x < W; x += W / 7) { ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(x, gTop - 30 * dpr, 2 * dpr, 30 * dpr); }
+      ctx.fillStyle = 'rgba(170,205,235,.18)'; ctx.fillRect(0, gTop, W, bTop - gTop);
+      ctx.strokeStyle = 'rgba(220,235,250,.35)'; ctx.lineWidth = 1.5 * dpr;
+      for (let x = W * 0.08; x < W; x += W / 6) { ctx.beginPath(); ctx.moveTo(x, gTop); ctx.lineTo(x, bTop); ctx.stroke(); }
+      ctx.fillStyle = '#2A64C8'; ctx.fillRect(0, gTop, W, 3 * dpr);
+      ctx.fillStyle = '#F4F7FA'; ctx.fillRect(0, bTop, W, bBase - bTop);
+      ctx.fillStyle = '#E3B21B'; ctx.fillRect(0, bBase - (bBase - bTop) * 0.22, W, (bBase - bTop) * 0.22);
+      // лёд
+      const ice = ctx.createLinearGradient(0, bBase, 0, Hh); ice.addColorStop(0, '#D7E6F1'); ice.addColorStop(1, '#F3F8FC');
+      ctx.fillStyle = ice; ctx.fillRect(0, bBase, W, Hh - bBase);
+      ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.ellipse(W * 0.3, yI + (Hh - yI) * 0.45, W * 0.25, 10 * dpr, -0.08, 0, 7); ctx.fill();
+      // линия ворот и вратарская (полукруг на льду перед воротами)
+      ctx.strokeStyle = 'rgba(226,40,62,.85)'; ctx.lineWidth = 2.5 * dpr; ctx.beginPath(); ctx.moveTo(0, yI); ctx.lineTo(W, yI); ctx.stroke();
+      const crR = 1.83 * mpx, crY = crR * 0.32;
+      ctx.fillStyle = 'rgba(70,150,235,.42)'; ctx.strokeStyle = 'rgba(226,40,62,.9)'; ctx.lineWidth = 2 * dpr;
+      ctx.beginPath(); ctx.ellipse(W / 2, yI, crR, crY, 0, 0, Math.PI); ctx.fill(); ctx.stroke();
+      // ворота: задняя рама, сетка, боковины
+      const fl = toPx(-P.GOAL.half, 0), fr = toPx(P.GOAL.half, 0), tl = toPx(-P.GOAL.half, P.GOAL.h), tr = toPx(P.GOAL.half, P.GOAL.h);
+      const dk = persp(1.12), bY = atDepth(1.12), bl = { x: W / 2 - P.GOAL.half * mpx * dk, y: bY }, br = { x: W / 2 + P.GOAL.half * mpx * dk, y: bY };
+      const tY = tl.y + (bY - fl.y) * 0.25;
+      ctx.fillStyle = 'rgba(255,255,255,.14)';
+      ctx.beginPath(); ctx.moveTo(bl.x, bl.y); ctx.lineTo(br.x, br.y); ctx.lineTo(tr.x, tY); ctx.lineTo(tl.x, tY); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1 * dpr;
+      for (let i = 0; i <= 12; i++) { const k = i / 12; ctx.beginPath(); ctx.moveTo(bl.x + (br.x - bl.x) * k, bl.y); ctx.lineTo(tl.x + (tr.x - tl.x) * k, tY); ctx.stroke(); }
+      for (let i = 0; i <= 7; i++) { const k = i / 7; const y1 = bl.y + (tY - bl.y) * k; ctx.beginPath(); ctx.moveTo(bl.x + (tl.x - bl.x) * k, y1); ctx.lineTo(br.x + (tr.x - br.x) * k, y1); ctx.stroke(); }
+      for (const [f0, b0] of [[fl, bl], [fr, br]]) {
+        ctx.beginPath(); ctx.moveTo(f0.x, f0.y); ctx.lineTo(b0.x, b0.y); ctx.lineTo(b0.x, tY); ctx.lineTo(f0.x === fl.x ? tl.x : tr.x, tl.y); ctx.closePath();
+        ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fill(); ctx.stroke();
+      }
+      ctx.strokeStyle = '#C81E2E'; ctx.lineWidth = 3 * dpr; ctx.beginPath(); ctx.moveTo(bl.x, bl.y); ctx.lineTo(br.x, br.y); ctx.stroke();
+      // рама ворот (трубы) — за вратарём
+      ctx.strokeStyle = '#E2283E'; ctx.lineWidth = Math.max(5 * dpr, 2 * P.POST_R * mpx); ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(fl.x, fl.y); ctx.lineTo(tl.x, tl.y); ctx.lineTo(tr.x, tr.y); ctx.lineTo(fr.x, fr.y); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 1.5 * dpr; ctx.beginPath(); ctx.moveTo(tl.x + 3 * dpr, tl.y - 1.5 * dpr); ctx.lineTo(tr.x - 3 * dpr, tr.y - 1.5 * dpr); ctx.stroke();
+      const polyF = (pts, fill, stroke) => {
+        ctx.beginPath(); pts.forEach((p, i) => { const q = toPx(p.u, p.v); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); }); ctx.closePath();
         ctx.fillStyle = fill; ctx.fill(); ctx.strokeStyle = stroke; ctx.lineWidth = 1.5 * dpr; ctx.stroke();
       };
+      // летящая шайба: если гол и она уже за вратарём — рисуем до него (вратарь её перекрывает)
+      const drawFlight = () => {
+        if (!opts.puck) return;
+        const end = toPx(opts.puck.u, Math.max(0, opts.puck.v)), st = { x: W / 2 + (pro ? 0 : 0), y: Hh * 0.88 };
+        const k = opts.puck.k ?? 1, q = { x: st.x + (end.x - st.x) * k, y: st.y + (end.y - st.y) * k };
+        const r = Math.max(3.5 * dpr, (1 - k) * 18 * dpr + k * 0.038 * mpx * 1.6);
+        ctx.fillStyle = 'rgba(5,10,16,.18)'; ctx.beginPath(); ctx.ellipse(q.x, q.y + r * 0.9, r * 1.2, r * 0.35, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = '#0A0D12'; ctx.beginPath(); ctx.ellipse(q.x, q.y, r, r * 0.55, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.beginPath(); ctx.ellipse(q.x - r * 0.25, q.y - r * 0.15, r * 0.45, r * 0.14, 0, 0, 7); ctx.fill();
+      };
+      if (opts.behind) drawFlight();
       drawGoalie(sil, opts.part);
-      for (const o of others()) for (const p of o.parts) polyF(p.pts, o.who === 'screen' ? 'rgba(15,45,82,.92)' : 'rgba(226,40,62,.85)', '#0B1C2E');
-      ctx.strokeStyle = '#E2283E'; ctx.lineWidth = 5 * dpr; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(a.x, b.y); ctx.lineTo(a.x, a.y); ctx.lineTo(b.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-      // состояние вратаря: готов / смещается / восстанавливается
+      for (const o of others()) for (const p of o.parts) polyF(p.pts, o.who === 'screen' ? 'rgba(27,63,122,.92)' : 'rgba(212,42,60,.88)', '#0B1C2E');
+      // состояние вратаря
       if (!opts.puck) {
         const col = gState === 'готов' ? '#FF4D6A' : '#2EE59D';
         ctx.font = `800 ${11 * dpr}px Manrope, sans-serif`; ctx.textAlign = 'left';
-        ctx.fillStyle = 'rgba(4,8,14,.65)'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(8 * dpr, 8 * dpr, 150 * dpr, 22 * dpr, 11 * dpr) : ctx.rect(8 * dpr, 8 * dpr, 150 * dpr, 22 * dpr); ctx.fill();
-        ctx.fillStyle = col; ctx.beginPath(); ctx.arc(20 * dpr, 19 * dpr, 4 * dpr, 0, 7); ctx.fill();
-        ctx.fillStyle = '#fff'; ctx.fillText('Вратарь: ' + gState, 30 * dpr, 23 * dpr);
+        ctx.fillStyle = 'rgba(4,8,14,.6)'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(10 * dpr, 10 * dpr, 150 * dpr, 22 * dpr, 11 * dpr) : ctx.rect(10 * dpr, 10 * dpr, 150 * dpr, 22 * dpr); ctx.fill();
+        ctx.fillStyle = col; ctx.beginPath(); ctx.arc(22 * dpr, 21 * dpr, 4 * dpr, 0, 7); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.fillText('Вратарь: ' + gState, 32 * dpr, 25 * dpr);
       }
       if (opts.trail) {
-        ctx.strokeStyle = 'rgba(63,215,255,.8)'; ctx.lineWidth = 2 * dpr; ctx.beginPath();
-        opts.trail.forEach((q, i) => { const pp = toPx(q.u, q.v); i ? ctx.lineTo(pp.x, pp.y) : ctx.moveTo(pp.x, pp.y); }); ctx.stroke();
+        ctx.strokeStyle = 'rgba(51,200,234,.85)'; ctx.lineWidth = 2.5 * dpr; ctx.beginPath();
+        opts.trail.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.stroke();
       }
       if (opts.aim && opts.finger) {
         const q = toPx(opts.aim.u, opts.aim.v);
-        ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1.5 * dpr; ctx.setLineDash([3 * dpr, 3 * dpr]);
+        ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 1.5 * dpr; ctx.setLineDash([3 * dpr, 3 * dpr]);
         ctx.beginPath(); ctx.moveTo(opts.finger.x * dpr, opts.finger.y * dpr); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([]);
       }
       if (opts.aim) reticle(opts.aim, opts.f, opts.drift || 0, opts.ring);
       if (opts.hit) {
         const q = toPx(opts.aim.u, opts.aim.v), r2 = toPx(opts.hit.u, Math.max(0, opts.hit.v));
-        ctx.setLineDash([4 * dpr, 4 * dpr]); ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1.5 * dpr;
+        ctx.setLineDash([4 * dpr, 4 * dpr]); ctx.strokeStyle = 'rgba(9,24,39,.75)'; ctx.lineWidth = 1.8 * dpr;
         ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(r2.x, r2.y); ctx.stroke(); ctx.setLineDash([]);
       }
-      if (opts.puck) {
-        const q = toPx(opts.puck.u, opts.puck.v), r = Math.max(4, (opts.puck.size || 1) * 0.05 * mpx);
-        ctx.fillStyle = 'rgba(63,215,255,.35)'; ctx.beginPath(); ctx.arc(q.x, q.y, r * 2.2, 0, 7); ctx.fill();
-        ctx.fillStyle = '#05090F'; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, 7); ctx.fill();
+      if (!opts.behind) drawFlight();
+      // своя клюшка и шайба на крюке (до броска)
+      ownStick(!opts.puck);
+    }
+
+    /* Своя клюшка снизу кадра: на стороне хвата из профиля; шайба у крюка, пока не бросил. */
+    function ownStick(withPuck) {
+      const W = face.width, Hh = face.height, hs = (state.profile.hand || 'L') === 'L' ? 1 : -1;
+      const px = W / 2, py = Hh * 0.88;
+      const heel = { x: px - hs * W * 0.06, y: py + Hh * 0.04 }, toe = { x: px - hs * W * 0.3, y: py + Hh * 0.1 };
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#14171C'; ctx.lineWidth = 16 * dpr; ctx.beginPath(); ctx.moveTo(heel.x, heel.y); ctx.lineTo(px - hs * W * 0.62, Hh * 0.62); ctx.stroke();
+      ctx.lineWidth = 26 * dpr; ctx.beginPath(); ctx.moveTo(heel.x, heel.y); ctx.lineTo(toe.x, toe.y); ctx.stroke();
+      ctx.strokeStyle = '#EEF2F6'; ctx.lineWidth = 18 * dpr;
+      for (const k of [0.25, 0.45, 0.65]) { ctx.beginPath(); ctx.moveTo(heel.x + (toe.x - heel.x) * k, heel.y + (toe.y - heel.y) * k); ctx.lineTo(heel.x + (toe.x - heel.x) * (k + 0.12), heel.y + (toe.y - heel.y) * (k + 0.12)); ctx.stroke(); }
+      if (withPuck) {
+        const r = 18 * dpr;
+        ctx.fillStyle = 'rgba(5,10,16,.18)'; ctx.beginPath(); ctx.ellipse(px, py + r * 0.6, r * 1.3, r * 0.4, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = '#0A0D12'; ctx.beginPath(); ctx.ellipse(px, py, r, r * 0.5, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = '#23272E'; ctx.fillRect(px - r, py - r * 0.5, r * 2, r * 0.45);
+        ctx.fillStyle = '#0A0D12'; ctx.beginPath(); ctx.ellipse(px, py - r * 0.5, r, r * 0.5, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.beginPath(); ctx.ellipse(px - r * 0.3, py - r * 0.6, r * 0.45, r * 0.15, 0, 0, 7); ctx.fill();
       }
     }
 
-    /* Вратарь «как настоящий»: щитки с валиками, нагрудник в цвет формы, маска с решёткой, ловушка и блин.
-       Рисуется поверх тех же прямоугольников, по которым считается физика, — что видно, то и считается. */
+    /* Вратарь из иллюстрированных частей: каждая часть (маска, нагрудник, щитки, ловушка, блин, клюшка) рисуется
+       ровно в прямоугольнике, который считает модель броска, — поэтому видимый сейв совпадает с расчётом. */
     function drawGoalie(sil, partShift) {
       const box = p => {
         const sh = partShift && partShift.id === p.id ? partShift : null;
         const us = p.pts.map(q => q.u + (sh ? sh.u : 0)), vs = p.pts.map(q => q.v + (sh ? sh.v : 0));
         const a = toPx(Math.min(...us), Math.max(...vs)), b = toPx(Math.max(...us), Math.min(...vs));
-        return { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y };
+        return { x: a.x, y: a.y, w: Math.max(2, b.x - a.x), h: Math.max(2, b.y - a.y) };
       };
-      const rr = (b, r, fill, stroke, lw = 1.5) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(b.x, b.y, Math.max(1, b.w), Math.max(1, b.h), Math.max(0, Math.min(r, b.w / 2, b.h / 2))); else ctx.rect(b.x, b.y, b.w, b.h); ctx.fillStyle = fill; ctx.fill(); if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw * dpr; ctx.stroke(); } };
-      const RED = '#D8263C', NAVY = '#0F2D52', WHITE = '#F4F7FA';
-      const order = ['stick', 'pads', 'legL', 'legR', 'body', 'head', 'blocker', 'glove'];
+      // контактная тень под вратарём
+      const all = sil.map(box), minX = Math.min(...all.map(b => b.x)), maxX = Math.max(...all.map(b => b.x + b.w)), baseY = Math.max(...all.map(b => b.y + b.h));
+      ctx.fillStyle = 'rgba(20,40,70,.25)'; ctx.beginPath(); ctx.ellipse((minX + maxX) / 2, baseY, (maxX - minX) * 0.55, 6 * dpr, 0, 0, 7); ctx.fill();
+      const order = ['stick', 'pads', 'legL', 'legR', 'body', 'blocker', 'glove', 'head'];
       for (const id of order) for (const p of sil.filter(q => q.id === id)) {
         const b = box(p);
-        if (id === 'pads') {
-          // бабочка: два щитка лежат на льду, внутренние края у пятки
-          const half = { ...b, w: b.w / 2 - 1 * dpr };
-          for (const bb of [half, { ...half, x: b.x + b.w / 2 + 1 * dpr }]) {
-            rr(bb, 8 * dpr, WHITE, NAVY);
-            ctx.strokeStyle = RED; ctx.lineWidth = 2 * dpr;
-            for (const k of [0.33, 0.66]) { ctx.beginPath(); ctx.moveTo(bb.x + bb.w * k, bb.y + 3 * dpr); ctx.lineTo(bb.x + bb.w * k, bb.y + bb.h - 3 * dpr); ctx.stroke(); }
-          }
-        } else if (id === 'legL' || id === 'legR') {
-          rr(b, 7 * dpr, WHITE, NAVY);
-          ctx.strokeStyle = 'rgba(15,45,82,.35)'; ctx.lineWidth = 1.5 * dpr;
-          for (const k of [0.3, 0.55, 0.8]) { ctx.beginPath(); ctx.moveTo(b.x + 3 * dpr, b.y + b.h * k); ctx.lineTo(b.x + b.w - 3 * dpr, b.y + b.h * k); ctx.stroke(); }
-          ctx.fillStyle = RED; ctx.fillRect(b.x + 2 * dpr, b.y + b.h * 0.42, b.w - 4 * dpr, 3 * dpr);
-        } else if (id === 'stick') {
-          rr(b, 3 * dpr, '#1A1D22');
-          ctx.fillStyle = '#C9A26A'; ctx.fillRect(b.x + b.w * 0.42, b.y - b.h * 1.6, b.w * 0.16, b.h * 1.6);
-        } else if (id === 'body') {
-          rr(b, 14 * dpr, RED, '#7E0E1C');
-          ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(b.x + 3 * dpr, b.y + b.h * 0.55, b.w - 6 * dpr, 4 * dpr);
-          // плечи шире нагрудника
-          rr({ x: b.x - b.w * 0.08, y: b.y, w: b.w * 1.16, h: b.h * 0.22 }, 10 * dpr, RED, '#7E0E1C');
-          ctx.font = `800 ${Math.max(10, b.w * 0.28)}px Unbounded, sans-serif`; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
-          ctx.fillText('1', b.x + b.w / 2, b.y + b.h * 0.47);
+        const img = goaliePartImage(id === 'legR' ? 'legL' : id);
+        if (id === 'body') { // нагрудник шире корпуса: плечи и руки
+          const ex = b.w * 0.35;
+          if (imgReady(img)) ctx.drawImage(img, b.x - ex, b.y - b.h * 0.08, b.w + ex * 2, b.h * 1.1);
         } else if (id === 'head') {
-          const cx = b.x + b.w / 2, cy = b.y + b.h / 2, r = Math.max(b.w, b.h) * 0.62;
-          ctx.fillStyle = RED; ctx.beginPath(); ctx.arc(cx, cy - r * 0.15, r, Math.PI, 0); ctx.fill();
-          ctx.fillStyle = WHITE; ctx.strokeStyle = NAVY; ctx.lineWidth = 1.5 * dpr;
-          ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.1, r * 0.85, r * 0.95, 0, 0, 7); ctx.fill(); ctx.stroke();
-          ctx.strokeStyle = '#3B4652'; ctx.lineWidth = 1.2 * dpr;
-          for (const k of [-0.4, 0, 0.4]) { ctx.beginPath(); ctx.moveTo(cx + k * r, cy - r * 0.3); ctx.lineTo(cx + k * r, cy + r * 0.7); ctx.stroke(); }
-          for (const k of [0, 0.35]) { ctx.beginPath(); ctx.moveTo(cx - r * 0.6, cy + k * r); ctx.lineTo(cx + r * 0.6, cy + k * r); ctx.stroke(); }
-        } else if (id === 'glove') {
-          // ловушка: «корзина» с карманом
-          const cx = b.x + b.w / 2, cy = b.y + b.h / 2, r = Math.min(b.w, b.h) * 0.55;
-          ctx.fillStyle = WHITE; ctx.strokeStyle = NAVY; ctx.lineWidth = 1.5 * dpr;
-          ctx.beginPath(); ctx.ellipse(cx, cy, b.w * 0.5, b.h * 0.5, 0, 0, 7); ctx.fill(); ctx.stroke();
-          ctx.fillStyle = 'rgba(15,45,82,.18)'; ctx.beginPath(); ctx.arc(cx, cy - r * 0.15, r * 0.55, 0, 7); ctx.fill();
-          ctx.fillStyle = RED; ctx.fillRect(b.x + b.w * 0.2, b.y + b.h - 5 * dpr, b.w * 0.6, 5 * dpr);
-        } else if (id === 'blocker') {
-          rr(b, 6 * dpr, WHITE, NAVY);
-          ctx.strokeStyle = RED; ctx.lineWidth = 3 * dpr; ctx.strokeRect(b.x + b.w * 0.18, b.y + b.h * 0.18, b.w * 0.64, b.h * 0.64);
+          const ex = b.w * 0.25;
+          if (imgReady(img)) ctx.drawImage(img, b.x - ex, b.y - b.h * 0.15, b.w + ex * 2, b.h * 1.3);
+        } else if (id === 'stick') {
+          if (imgReady(img)) ctx.drawImage(img, b.x - b.w * 0.6, b.y - b.h * 0.4, b.w * 2.2, b.h * 1.8);
+        } else if (imgReady(img)) {
+          if (id === 'legR') { ctx.save(); ctx.translate(b.x + b.w / 2, 0); ctx.scale(-1, 1); ctx.translate(-(b.x + b.w / 2), 0); ctx.drawImage(img, b.x, b.y, b.w, b.h); ctx.restore(); }
+          else ctx.drawImage(img, b.x, b.y, b.w, b.h);
         }
       }
     }
@@ -492,19 +537,23 @@ function runGame(mode, set, rerender) {
     /* Прицел: крест в точке прицеливания, эллипс — куда реально уйдёт 9 бросков из 10 при этой силе.
        В профи вокруг креста кольцо силы. В движении у новичка эллипс сдвинут на снос. */
     function reticle(p, f, drift, ring) {
-      const k = kOf(f), sd = sdOf(k), col = powerColor(f);
+      const k = kOf(f), sd = sdOf(k);
       const q = toPx(p.u, p.v), c = toPx(p.u + drift, p.v);
-      ctx.fillStyle = col + '33'; ctx.strokeStyle = col; ctx.lineWidth = 2 * dpr;
-      ctx.beginPath(); ctx.ellipse(c.x, c.y, Math.max(3, 2 * sd * mpx), Math.max(3, 1.6 * sd * mpx), 0, 0, 7); ctx.fill(); ctx.stroke();
-      const L = 9 * dpr;
-      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 * dpr;
-      ctx.beginPath(); ctx.moveTo(q.x - L, q.y); ctx.lineTo(q.x + L, q.y); ctx.moveTo(q.x, q.y - L); ctx.lineTo(q.x, q.y + L); ctx.stroke();
+      if (sd > 0.001) { // разброс исполнения — только в «Профи»
+        ctx.fillStyle = 'rgba(51,200,234,.16)'; ctx.strokeStyle = 'rgba(51,200,234,.6)'; ctx.lineWidth = 1.5 * dpr;
+        ctx.beginPath(); ctx.ellipse(c.x, c.y, Math.max(3, 2 * sd * mpx), Math.max(3, 1.6 * sd * mpx), 0, 0, 7); ctx.fill(); ctx.stroke();
+      }
+      const R = 17 * dpr;
+      ctx.strokeStyle = 'rgba(9,24,39,.55)'; ctx.lineWidth = 6 * dpr; ctx.beginPath(); ctx.arc(q.x, q.y, R, 0, 7); ctx.stroke();
+      ctx.strokeStyle = '#33C8EA'; ctx.lineWidth = 3.5 * dpr; ctx.beginPath(); ctx.arc(q.x, q.y, R, 0, 7); ctx.stroke();
+      ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(q.x, q.y, 3.5 * dpr, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#33C8EA'; ctx.lineWidth = 1.5 * dpr; ctx.beginPath(); ctx.arc(q.x, q.y, 3.5 * dpr, 0, 7); ctx.stroke();
       if (ring) {
-        const R0 = 30 * dpr;
-        ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 6 * dpr; ctx.beginPath(); ctx.arc(q.x, q.y, R0, 0, 7); ctx.stroke();
-        ctx.strokeStyle = col; ctx.beginPath(); ctx.arc(q.x, q.y, R0, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); ctx.stroke();
-        ctx.font = `800 ${13 * dpr}px Unbounded, sans-serif`; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
-        ctx.fillText(Math.round(k) + ' км/ч', q.x, q.y - R0 - 8 * dpr);
+        const R2 = R + 9 * dpr, col = powerColor(f);
+        ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 5 * dpr; ctx.beginPath(); ctx.arc(q.x, q.y, R2, 0, 7); ctx.stroke();
+        ctx.strokeStyle = col; ctx.beginPath(); ctx.arc(q.x, q.y, R2, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); ctx.stroke();
+        ctx.font = `800 ${13 * dpr}px Unbounded, sans-serif`; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(9,24,39,.8)'; ctx.lineWidth = 4 * dpr;
+        ctx.strokeText(Math.round(k) + ' км/ч', q.x, q.y - R2 - 8 * dpr); ctx.fillText(Math.round(k) + ' км/ч', q.x, q.y - R2 - 8 * dpr);
       }
     }
 
@@ -588,23 +637,26 @@ function runGame(mode, set, rerender) {
         shift = { id: part.id, du: dx / L * go, dv: dy / L * go };
       }
       const startT = (r.reaction || 0.2) / r.T;
+      const gFrac = 1 / Math.max(1, (sil[0] && sil[0].scale) || 1); // доля пути до плоскости вратаря
+      const isGoal = r.result === 'goal';
       await tween(dur, kk => {
-        const pu = { u: target.u * kk, v: Math.max(0, target.v * kk), size: 2.4 - kk * 1.4 };
+        const pu = { u: target.u, v: target.v, k: kk };
         const ps = shift && kk > startT ? { id: shift.id, u: shift.du * Math.min(1, (kk - startT) / (1 - startT)), v: shift.dv * Math.min(1, (kk - startT) / (1 - startT)) } : null;
-        frame(sil, { aim: aimP, f, part: ps, puck: pu });
+        frame(sil, { aim: aimP, f, part: ps, puck: pu, behind: isGoal && kk > gFrac });
       }, ease.linear);
-      frame(sil, { aim: aimP, f, part: shift ? { id: shift.id, u: shift.du, v: shift.dv } : null, puck: { u: target.u, v: Math.max(0, target.v), size: 1 }, hit: target });
+      frame(sil, { aim: aimP, f, part: shift ? { id: shift.id, u: shift.du, v: shift.dv } : null, puck: { u: target.u, v: target.v, k: 1 }, hit: target, behind: isGoal });
       phase = 'done';
       // повтор: та же траектория втрое медленнее, со следом шайбы и движением той части вратаря, что встретила шайбу
       const replay = async () => {
         const trail = [];
+        const end = toPx(target.u, Math.max(0, target.v)), st = { x: face.width / 2, y: face.height * 0.88 };
         await tween(dur * 3, kk => {
-          const pu = { u: target.u * kk, v: Math.max(0, target.v * kk), size: 2.4 - kk * 1.4 };
-          trail.push({ u: pu.u, v: pu.v });
+          const pu = { u: target.u, v: target.v, k: kk };
+          trail.push({ x: st.x + (end.x - st.x) * kk, y: st.y + (end.y - st.y) * kk });
           const ps = shift && kk > startT ? { id: shift.id, u: shift.du * Math.min(1, (kk - startT) / (1 - startT)), v: shift.dv * Math.min(1, (kk - startT) / (1 - startT)) } : null;
-          frame(sil, { aim: aimP, f, part: ps, puck: pu, trail });
+          frame(sil, { aim: aimP, f, part: ps, puck: pu, trail, behind: isGoal && kk > gFrac });
         }, ease.linear);
-        frame(sil, { aim: aimP, f, part: shift ? { id: shift.id, u: shift.du, v: shift.dv } : null, puck: { u: target.u, v: Math.max(0, target.v), size: 1 }, hit: target, trail });
+        frame(sil, { aim: aimP, f, part: shift ? { id: shift.id, u: shift.du, v: shift.dv } : null, puck: { u: target.u, v: target.v, k: 1 }, hit: target, trail, behind: isGoal });
       };
       const goal = r.result === 'goal';
       // три отдельные оценки: решение (была ли выбранная точка голевой при точном исполнении),
@@ -617,9 +669,13 @@ function runGame(mode, set, rerender) {
       if (ended) return;
       logItem(session, { mode: mode.id, ctrl: pro ? 'pro' : 'novice', level: set.level, principle: mode.principle, verdict: decision ? 'best' : 'bad', decision, executed, goal, result: r.result, kmh: Math.round(k), timeMs: 0,
         seed, S: [+S.x.toFixed(1), +S.y.toFixed(1)], aim: [+aimP.u.toFixed(2), +aimP.v.toFixed(2)], target: [+target.u.toFixed(2), +target.v.toFixed(2)] });
-      live$.textContent = '';
-      if (pro) live$.parentNode.style.display = 'none';
-      if (shootBtn) shootBtn.disabled = true;
+      live$.textContent = { goal: 'Гол', save: 'Сейв', post: 'Штанга', miss: 'Мимо', blocked: 'Блок' }[r.result] + ` · ${Math.round(k)} км/ч`;
+      pre.textContent = { goal: 'ГОЛ', save: 'СЕЙВ', post: 'ШТАНГА', miss: 'МИМО', blocked: 'БЛОК' }[r.result];
+      pre.className = 'pre-val ' + (goal ? 'g' : 'n');
+      preBox.firstChild.textContent = 'Результат';
+      replayBtn.disabled = false; replayBtn.onclick = replay;
+      const nextBtn = h('button.btn.primary.shot-go', { onclick: round }, results.length < SHOTS ? 'Дальше' : 'Итоги');
+      if (shootBtn) shootBtn.replaceWith(nextBtn); else replayBtn.after(nextBtn);
       const miss = Math.round(Math.hypot(target.u - aimP.u, target.v - aimP.v) * 100);
       hud.innerHTML = '';
       hud.append(h('span.shot-res.' + (goal ? 'g' : 'n'), { goal: 'ГОЛ', save: 'СЕЙВ', post: 'ШТАНГА', miss: 'МИМО', blocked: 'БЛОК' }[r.result]),
@@ -630,9 +686,7 @@ function runGame(mode, set, rerender) {
           h('span', { class: executed ? 'ok' : 'no' }, h('b', 'Исполнение'), executed ? 'точно в прицел' : `мимо прицела на ${Math.round(execErr * 100)} см`),
           h('span', { class: goal ? 'ok' : 'no' }, h('b', 'Исход'), { goal: 'гол', save: 'сейв', post: 'штанга', miss: 'мимо', blocked: 'блок' }[r.result])),
         h('p.explain', { style: { margin: '6px 0 0' } }, explainShot(r, sc, mode, { notSet, screened })),
-        h('div.row', { style: { marginTop: '10px' } },
-          h('button.btn', { onclick: replay }, 'Повтор ×⅓'),
-          h('button.btn.primary.grow', { onclick: round }, results.length < SHOTS ? 'Следующий бросок' : 'Итоги')));
+        null);
       setTimeout(() => hud.scrollIntoView({ behavior: 'smooth', block: 'end' }), 50);
     }
   }
