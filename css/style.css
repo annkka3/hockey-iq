@@ -555,3 +555,19 @@ body.no-scroll { overflow: hidden; }
 .read-cap { position: absolute; left: 12px; right: 56px; top: 12px; z-index: 2; padding: 6px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 700;
   background: rgba(4,8,14,.78); color: #fff; animation: rise .25s ease; }
 .opt.read-pick { border-color: var(--cyan); }
+
+/* ---------- «Бросок»: управление, сила, протяжка, модель ---------- */
+.power-box { margin-top: 12px; padding: 12px 14px; }
+.power-box b { font-family: var(--display); font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.shot-live { flex: 1; font-size: 13px; font-weight: 700; color: var(--muted); }
+input.power { width: 100%; margin-top: 10px; -webkit-appearance: none; appearance: none; height: 10px; border-radius: 99px;
+  background: linear-gradient(90deg, #2EE59D 0%, #2EE59D 40%, #FFC53D 45%, #FFC53D 70%, #FF4D6A 75%, #FF4D6A 100%); opacity: .9; }
+input.power::-webkit-slider-thumb { -webkit-appearance: none; width: 28px; height: 28px; border-radius: 50%; background: #fff; border: 4px solid var(--c, #2EE59D); box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+input.power::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: #fff; border: 4px solid var(--c, #2EE59D); }
+.drag-track { position: relative; margin-top: 10px; height: 46px; border-radius: 99px; background: linear-gradient(180deg, #E7F1F8, #CFE0EC); border: 1px solid var(--stroke-hi); touch-action: none; cursor: grab; }
+.drag-track span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: var(--navy); letter-spacing: .06em; opacity: .55; pointer-events: none; }
+.drag-knob { position: absolute; top: 50%; width: 34px; height: 16px; margin: -8px 0 0 -17px; border-radius: 50%; background: #05090F; box-shadow: 0 0 0 4px rgba(63,215,255,.55); pointer-events: none; }
+.aim-line { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+.panel.model { margin-top: 12px; }
+.panel.model ul { margin: 8px 0 0; padding-left: 18px; }
+.panel.model li { font-size: 13.5px; color: var(--muted); margin: 4px 0; }

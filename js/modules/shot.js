@@ -11,14 +11,14 @@ const NS = 'http://www.w3.org/2000/svg';
 const sv = (tag, attrs = {}, parent) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); if (parent) parent.appendChild(n); return n; };
 const scr = p => ({ x: p.x, y: R.L - p.y });
 
-let tab = 'geo';
+let tab = 'game';
 
 export function render(view, rerender) {
   view.append(h('div.h1', 'Бросок'),
-    h('div.toggle', { style: { '--n': 2, marginBottom: '14px' } },
-      h('button', { class: tab === 'geo' ? 'on' : '', onclick: () => { tab = 'geo'; rerender(); } }, 'Геометрия'),
-      h('button', { class: tab === 'game' ? 'on' : '', onclick: () => { tab = 'game'; rerender(); } }, 'Игра')));
-  if (tab === 'geo') geometry(view); else gameMenu(view, rerender);
+    h('div.toggle', { style: { '--n': 3, marginBottom: '14px' } },
+      [['game', 'Игра'], ['geo', 'Геометрия'], ['model', 'Как считается']].map(([k, t]) =>
+        h('button', { class: tab === k ? 'on' : '', onclick: () => { tab = k; rerender(); } }, t))));
+  if (tab === 'geo') geometry(view); else if (tab === 'model') model(view); else gameMenu(view, rerender);
 }
 
 /* ---------------- Геометрия ---------------- */
@@ -150,26 +150,37 @@ function drawFace(face, sil, others, marks = []) {
   for (const m of marks) sv('circle', { cx: m.u, cy: v(m.v), r: 0.045, class: 'face-mark ' + m.cls }, face);
 }
 
+
 /* ---------------- Игра ---------------- */
 const MODES = [
   { id: 'angle', name: 'Угол', line: 'Бросаешь из разных точек. Узнай, откуда ворота открыты, а откуда нет.', principle: null },
   { id: 'goalie', name: 'Обыграй вратаря', line: 'Бабочка — верх. Стойка — низ и между щитков. Глубоко — углы, вышел — обводи.', principle: null },
   { id: 'royal', name: 'Королевская дорога', line: 'Пас через слот — вратарь едет. Бросай в касание, пока он не встал.', principle: 'royal-road' },
-  { id: 'drag', name: 'Смени угол', line: 'Защитник в линии броска. Протяни шайбу в сторону — и бросай.', principle: 'change-angle' },
+  { id: 'move', name: 'В движении', line: 'Едешь поперёк слота. Вратарь догоняет угол с опозданием — бросай, пока он едет. Шайбу немного сносит по ходу.', principle: 'change-angle' },
+  { id: 'drag', name: 'Протяжка', line: 'Защитник в линии броска. Протяни шайбу в сторону — меняется угол, вратарь не успевает за ним.', principle: 'change-angle' },
   { id: 'screen', name: 'Заслон', line: 'Партнёр закрывает вратарю обзор. Бросай мимо него, а не в него.', principle: 'net-front' },
+  { id: 'rebound', name: 'Добивание', line: 'Бросок от синей, вратарь отбил. Шайба у тебя на пятаке — добивай, пока он не встал на угол.', principle: 'net-front' },
 ];
 const SHOTS = 10;
+const CTRL = {
+  novice: { name: 'Новичок', line: 'Ползунком выбери силу, нажми точку в воротах и жми «Бросок». Кружок показывает, куда реально может уйти шайба.', mult: 0.6 },
+  pro: { name: 'Профи', line: 'Зажми палец на точке в воротах: кольцо силы качается от слабой к максимальной. Отпусти в нужный момент. Пока держишь — веди прицел, но вратарь не ждёт.', mult: 1 },
+};
+const shotSet = () => ({ level: 'pro', speedMode: 'age', ctrl: 'novice', power: 0.5, ...(state.profile.shot || {}) });
 
 function gameMenu(view, rerender) {
-  const set = state.profile.shot || { level: 'pro', speedMode: 'age' };
-  view.append(h('p.lead', 'Свайп от шайбы к точке в воротах: куда отпустил палец — туда и бросок. Быстрее свайп — сильнее бросок, но шире разброс.'),
+  const set = shotSet();
+  const save = patch => setProfile({ shot: { ...shotSet(), ...patch } });
+  view.append(
     h('div.panel',
-      h('label.field', h('span', 'Вратарь'), seg(Object.entries(P.LEVELS).map(([k, l]) => [k, l.name]), set.level, v => setProfile({ shot: { ...set, level: v } }), rerender)),
-      h('label.field', { style: { marginBottom: 0 } }, h('span', 'Сила броска: до 95 или до 150 км/ч'), seg([['age', 'Мой возраст'], ['nhl', 'НХЛ']], set.speedMode, v => setProfile({ shot: { ...set, speedMode: v } }), rerender))));
+      h('label.field', h('span', 'Управление'), seg([['novice', 'Новичок'], ['pro', 'Профи']], set.ctrl, v => save({ ctrl: v }), rerender)),
+      h('p.muted.small', { style: { margin: '-4px 0 12px' } }, CTRL[set.ctrl].line),
+      h('label.field', h('span', 'Вратарь'), seg(Object.entries(P.LEVELS).map(([k, l]) => [k, l.name]), set.level, v => save({ level: v }), rerender)),
+      h('label.field', { style: { marginBottom: 0 } }, h('span', 'Сила броска: до 95 или до 150 км/ч'), seg([['age', 'Мой возраст'], ['nhl', 'НХЛ']], set.speedMode, v => save({ speedMode: v }), rerender))));
   view.append(h('div.h2', 'Режимы'));
   for (const m of MODES) {
     const best = bestOf('shot:' + m.id);
-    view.append(h('div.panel.deck', { onclick: () => runGame(m, set, rerender) },
+    view.append(h('div.panel.deck', { onclick: () => runGame(m, shotSet(), rerender) },
       h('div.ico', icon('shot')),
       h('div.grow', h('div.nm', m.name), h('div.ln', m.line)),
       h('div.cnt', best != null ? `рекорд ${best}/${SHOTS}` : '')));
@@ -190,33 +201,44 @@ const bestOf = mod => {
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[Math.floor(Math.random() * a.length)];
+const lerpP = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k });
 
 function setup(mode) {
   const stance = pick(['butterfly', 'stand']);
   if (mode === 'angle') {
     const S = pick([{ x: rnd(-2, 2), y: rnd(46, 50) }, { x: rnd(-9, -5), y: rnd(46, 51) }, { x: rnd(5, 9), y: rnd(46, 51) }, { x: rnd(-12, -9), y: rnd(51, 54) }, { x: rnd(9, 12), y: rnd(51, 54) }, { x: rnd(-6, 6), y: rnd(38.5, 42) }]);
-    return { S, G: P.goaliePos(S, rnd(0.6, 1.2)), stance, others: [] };
+    const depth = rnd(0.6, 1.2);
+    return { S, depth, G: P.goaliePos(S, depth), stance };
   }
   if (mode === 'goalie') {
     const S = { x: rnd(-3.5, 3.5), y: rnd(45, 50) };
     const depth = pick([0.3, 0.9, 1.6]);
-    return { S, G: P.goaliePos(S, depth), stance, others: [], depth };
+    return { S, depth, G: P.goaliePos(S, depth), stance };
   }
   if (mode === 'royal') {
     // хват: левше бросок в касание удобнее с правого круга (клюшка смотрит в середину), правше — с левого
     const side = state.profile.hand === 'R' ? -1 : 1;
     const from = { x: -6.8 * side, y: rnd(48.5, 50.5) }, S = { x: 6.6 * side, y: rnd(48.5, 50.5) };
-    return { S, from, G: P.goaliePos(from, 1.0), Gend: P.goaliePos(S, 1.0), stance: 'butterfly', others: [] };
+    return { S, from, depth: 1.0, G: P.goaliePos(from, 1.0), stance: 'butterfly', passAt: rnd(0.7, 1.0), passDur: 0.45 };
+  }
+  if (mode === 'move') {
+    const dir = pick([-1, 1]), y = rnd(46.5, 49);
+    const a = { x: -6.5 * dir, y }, b = { x: 6.5 * dir, y: y + rnd(-0.6, 0.6) };
+    return { S: a, path: { a, b, dur: Math.hypot(b.x - a.x, b.y - a.y) / P.SKATE }, depth: 0.9, G: P.goaliePos(a, 0.9), stance };
   }
   if (mode === 'drag') {
     const S = { x: rnd(-1.5, 1.5), y: rnd(43, 45) };
     const D = { x: S.x * 0.5 + rnd(-0.3, 0.3), y: S.y + 4.5 };
-    return { S, G: P.goaliePos(S, 0.9), stance: 'butterfly', others: [], D };
+    return { S, base: { ...S }, depth: 0.9, G: P.goaliePos(S, 0.9), stance: 'butterfly', D };
+  }
+  if (mode === 'rebound') {
+    const P0 = { x: pick([-1, 1]) * rnd(5, 8.5), y: rnd(38.5, 40) };
+    const reb = { x: (Math.random() < 0.5 ? -1 : 1) * rnd(1.2, 2.6), y: rnd(51, 52.8) };
+    return { S: reb, P0, reb, depth: 0.6, G: P.goaliePos(P0, 0.6), stance: 'butterfly', saveAt: 0.9, rebDur: 0.32 };
   }
   const S = { x: rnd(-3, 3), y: rnd(40, 44) };
   const G = P.goaliePos(S, 0.8);
-  const scr0 = { x: G.x * 0.4 + rnd(-0.2, 0.2), y: 53 };
-  return { S, G, stance: pick(['butterfly', 'stand']), others: [], screen: scr0 };
+  return { S, depth: 0.8, G, stance: pick(['butterfly', 'stand']), screen: { x: G.x * 0.4 + rnd(-0.2, 0.2), y: 53 } };
 }
 
 function runGame(mode, set, rerender) {
@@ -224,44 +246,73 @@ function runGame(mode, set, rerender) {
   root.appendChild(inner); document.body.appendChild(root); document.body.style.overflow = 'hidden';
   const session = startSession('shot:' + mode.id);
   const results = [];
-  let ended = false;
-  const close = () => { cancelAll(); if (!ended) { ended = true; finishSession(session); } root.remove(); document.body.style.overflow = ''; rerender(); };
+  let ended = false, live = false;
+  const close = () => { live = false; cancelAll(); if (!ended) { ended = true; finishSession(session); } root.remove(); document.body.style.overflow = ''; rerender(); };
+  const pro = set.ctrl === 'pro', mult = CTRL[pro ? 'pro' : 'novice'].mult;
   const maxK = set.speedMode === 'nhl' ? 150 : 95, minK = 40;
+  const kOf = f => minK + f * (maxK - minK);
+  const sdOf = k => P.spread((k - minK) / (150 - minK), mult); // разброс зависит от абсолютной скорости
+  const lvl = P.LEVELS[set.level];
+  let power = clamp(set.power ?? 0.5, 0, 1);
 
   function round() {
     if (results.length >= SHOTS) return finish();
     inner.innerHTML = '';
     const sc = setup(mode.id);
-    let S = { ...sc.S }, G = { ...sc.G }, t0 = performance.now(), shiftAt = null, received = mode.id !== 'royal';
+    let S = { ...sc.S }, G = { ...sc.G }, puck = { ...(sc.from || sc.P0 || sc.S) }, vx = 0, drag = 0;
+    const hist = [];
+    let ready = !(sc.passAt || sc.saveAt), phase = 'aim', aim = null, charge = null, lastT = 0;
+    const t0 = performance.now();
+    const now = () => (performance.now() - t0) / 1000;
+
     const dots = h('div.dots', Array.from({ length: SHOTS }, (_, k) => h('i', { class: k < results.length ? (results[k] ? 'best' : 'bad') : k === results.length ? 'now' : '' })));
     inner.append(h('div.play-top', h('button.x', { onclick: close }, icon('close')), dots),
-      h('div.q-meta', mode.name), h('div.q', { style: { fontSize: '16px', margin: '8px 0' } }, mode.line));
+      h('div.q-meta', `${mode.name} · ${pro ? 'профи' : 'новичок'}`), h('div.q', { style: { fontSize: '16px', margin: '8px 0' } }, mode.line));
 
     // мини-карта
     const map = sv('svg', { viewBox: '-15.6 -0.6 31.2 21', class: 'rink-svg mini-map' });
     drawRink(sv('g', { class: 'rink' }, map), R, 'mm' + results.length);
     const lCone = sv('g', {}, map), lEnt = sv('g', {}, map);
     const tMe = token(lEnt, 'me', 'Я'), tG = token(lEnt, 'g', 'ВР');
-    const tD = sc.D ? token(lEnt, 'd', '') : null;
-    const tScr = sc.screen ? token(lEnt, 'mate', 'ПН') : null;
-    const tFrom = sc.from ? token(lEnt, 'mate', 'ЛН') : null;
-    if (tFrom) place(tFrom, sc.from);
-    if (tD) place(tD, sc.D);
-    if (tScr) place(tScr, sc.screen);
+    if (sc.D) place(token(lEnt, 'd', ''), sc.D);
+    if (sc.screen) place(token(lEnt, 'mate', 'ПН'), sc.screen);
+    if (sc.from) place(token(lEnt, 'mate', 'ЛН'), sc.from);
+    if (sc.P0) place(token(lEnt, 'mate', sc.P0.x < 0 ? 'ЛЗ' : 'ПЗ'), sc.P0);
     const puckDot = sv('circle', { r: 0.35, class: 'puck-core' }, lEnt);
 
     const face = h('canvas.goal-cv');
-    const hud = h('div.shot-hud', h('span', 'Свайпни от шайбы в ворота'));
-    const stage = h('div.shot-stage', face, h('div.puck-start'));
-    inner.append(h('div.rink-wrap', { style: { padding: '6px' } }, map), stage, hud);
+    const hud = h('div.shot-hud');
+    const stage = h('div.shot-stage', face);
+    inner.append(h('div.rink-wrap', { style: { padding: '6px' } }, map), stage);
 
-    let extra = null;
+    // протяжка: шайба на дорожке, тянешь влево-вправо
     if (mode.id === 'drag') {
-      extra = h('div.row', { style: { marginTop: '10px' } },
-        h('button.btn.small.grow', { onclick: () => dragStep(-1) }, '← Протяжка'),
-        h('button.btn.small.grow', { onclick: () => dragStep(1) }, 'Протяжка →'));
-      inner.append(extra);
+      const knob = h('i.drag-knob');
+      const track = h('div.drag-track', h('span', '← протяжка →'), knob);
+      const setDrag = ev => {
+        const r = track.getBoundingClientRect();
+        const k = clamp((ev.clientX - r.left) / r.width, 0, 1);
+        drag = (k - 0.5) * 4.8; knob.style.left = (k * 100) + '%';
+      };
+      track.addEventListener('pointerdown', ev => { if (phase !== 'aim') return; track.setPointerCapture(ev.pointerId); setDrag(ev); track.onpointermove = setDrag; });
+      track.addEventListener('pointerup', () => { track.onpointermove = null; });
+      knob.style.left = '50%';
+      inner.append(track);
     }
+
+    // управление
+    const live$ = h('div.shot-live');
+    let shootBtn = null;
+    if (!pro) {
+      const pLab = h('b');
+      const slider = h('input.power', { type: 'range', min: 0, max: 1, step: 0.01, value: power,
+        oninput: e => { power = +e.target.value; setProfile({ shot: { ...shotSet(), power } }); syncPower(); } });
+      const syncPower = () => { const k = kOf(power); pLab.textContent = `${Math.round(k)} км/ч · разброс ±${Math.round(sdOf(k) * 200)} см`; slider.style.setProperty('--c', powerColor(power)); };
+      syncPower();
+      shootBtn = h('button.btn.primary.grow', { disabled: true, onclick: () => { if (aim && ready && phase === 'aim') shoot(aim, power); } }, 'Бросок');
+      inner.append(h('div.panel.power-box', h('div.row', h('span.muted.small.grow', 'Сила'), pLab), slider, h('div.row', { style: { marginTop: '10px' } }, live$, shootBtn)));
+    } else inner.append(h('div.panel.power-box', live$));
+    inner.append(hud);
 
     const ctx = face.getContext('2d');
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -269,7 +320,8 @@ function runGame(mode, set, rerender) {
     fit();
     const U0 = -1.55, U1 = 1.55, V0 = -0.1, V1 = 1.82;
     const toPx = (u, v) => ({ x: (u - U0) / (U1 - U0) * face.width, y: face.height - (v - V0) / (V1 - V0) * face.height });
-    const toUV = (x, y) => ({ u: U0 + x / face.clientWidth * (U1 - U0), v: V0 + (1 - y / face.clientHeight) * (V1 - V0) });
+    const toUV = (x, y) => ({ u: clamp(U0 + x / face.clientWidth * (U1 - U0), -1.4, 1.4), v: clamp(V0 + (1 - y / face.clientHeight) * (V1 - V0), 0, 1.75) });
+    const mpx = face.width / (U1 - U0); // пикселей в метре
 
     const others = () => {
       const o = [];
@@ -277,27 +329,54 @@ function runGame(mode, set, rerender) {
       if (sc.screen) o.push({ who: 'screen', parts: P.silhouette(S, sc.screen, P.BODY) });
       return o;
     };
-    const goalieSil = (shift) => P.silhouette(S, G, P.STANCES[sc.stance], shift);
+    const goalieSil = () => P.silhouette(S, G, P.STANCES[sc.stance]);
+
+    // мир: где шайба и бросающий в момент t, вратарь догоняет угол с задержкой
+    function step(t) {
+      const dt = Math.min(0.05, t - lastT); lastT = t;
+      if (sc.path) {
+        const k = clamp(t / sc.path.dur, 0, 1);
+        S = lerpP(sc.path.a, sc.path.b, k);
+        vx = k < 1 ? (sc.path.b.x - sc.path.a.x) / sc.path.dur : 0;
+        puck = { ...S };
+      } else if (sc.base) { S = { x: sc.base.x + drag, y: sc.base.y }; puck = { ...S }; }
+      else if (sc.passAt) {
+        const k = clamp((t - sc.passAt) / sc.passDur, 0, 1);
+        puck = lerpP(sc.from, S, k);
+        if (k >= 1 && !ready) { ready = true; status(); }
+      } else if (sc.saveAt) {
+        const k = clamp((t - sc.saveAt) / sc.rebDur, 0, 1);
+        puck = t < sc.saveAt ? lerpP(sc.P0, { x: G.x, y: G.y - 0.6 }, clamp(t / sc.saveAt, 0, 1)) : lerpP({ x: G.x, y: G.y - 0.6 }, sc.reb, k);
+        if (k >= 1 && !ready) { ready = true; status(); }
+      }
+      hist.push({ t, x: puck.x, y: puck.y });
+      if (sc.saveAt && t < sc.saveAt) return; // до сейва вратарь в позиции против броска от синей
+      const react = lvl.reaction + (sc.saveAt ? 0.05 : 0);
+      let seen = hist[0];
+      for (const p of hist) { if (p.t <= t - react) seen = p; else break; }
+      const tgt = P.goaliePos(seen, sc.depth);
+      const v = (sc.saveAt ? P.TRACK.fromDown : P.TRACK.shuffle) * lvl.move;
+      const d = Math.hypot(tgt.x - G.x, tgt.y - G.y), go = Math.min(d, v * dt);
+      if (d > 0.001) G = { x: G.x + (tgt.x - G.x) / d * go, y: G.y + (tgt.y - G.y) / d * go };
+    }
+    const unset = () => { const ideal = P.goaliePos(puck, sc.depth); return Math.hypot(ideal.x - G.x, ideal.y - G.y) > 0.15; };
 
     function drawMap() {
       place(tMe, S); place(tG, G);
       const s = scr(S), pl = scr({ x: -P.GOAL.half, y: 56 }), pr = scr({ x: P.GOAL.half, y: 56 });
       lCone.innerHTML = '';
       sv('path', { d: `M${s.x} ${s.y} L${pl.x} ${pl.y} L${pr.x} ${pr.y} Z`, class: 'cone' }, lCone);
-      const pk = received ? S : sc.from;
-      puckDot.setAttribute('cx', scr(pk).x + 0.7); puckDot.setAttribute('cy', scr(pk).y - 0.6);
+      puckDot.setAttribute('cx', scr(puck).x + (ready ? 0.7 : 0)); puckDot.setAttribute('cy', scr(puck).y - (ready ? 0.6 : 0));
     }
 
-    function drawFaceCv(sil, puck, partShift) {
+    function frame(sil, opts = {}) {
       const W = face.width, Hh = face.height;
       ctx.clearRect(0, 0, W, Hh);
       const g = ctx.createLinearGradient(0, 0, 0, Hh); g.addColorStop(0, '#0B1A2C'); g.addColorStop(1, '#14304C');
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, Hh);
       const ice = toPx(0, 0).y; ctx.fillStyle = '#E7F1F8'; ctx.fillRect(0, ice, W, Hh - ice);
-      // вратарская
       ctx.fillStyle = 'rgba(63,160,255,.35)'; const c0 = toPx(-1.83, 0), c1 = toPx(1.83, 0);
       ctx.beginPath(); ctx.ellipse((c0.x + c1.x) / 2, ice, (c1.x - c0.x) / 2, Hh * 0.06, 0, 0, Math.PI); ctx.fill();
-      // сетка
       const a = toPx(-P.GOAL.half, P.GOAL.h), b = toPx(P.GOAL.half, 0);
       ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
       ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1 * dpr;
@@ -307,97 +386,99 @@ function runGame(mode, set, rerender) {
         ctx.beginPath(); pts.forEach((p, i) => { const q = toPx(p.u + (sh ? sh.u : 0), p.v + (sh ? sh.v : 0)); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); }); ctx.closePath();
         ctx.fillStyle = fill; ctx.fill(); ctx.strokeStyle = stroke; ctx.lineWidth = 1.5 * dpr; ctx.stroke();
       };
-      for (const p of sil) polyF(p.pts, p.id === 'pads' || p.id.startsWith('leg') ? '#F4F7FA' : p.id === 'glove' || p.id === 'blocker' ? '#FF3D57' : '#E8EEF4', '#0F2D52', partShift && partShift.id === p.id ? partShift : null);
+      for (const p of sil) polyF(p.pts, p.id === 'pads' || p.id.startsWith('leg') ? '#F4F7FA' : p.id === 'glove' || p.id === 'blocker' ? '#FF3D57' : '#E8EEF4', '#0F2D52', opts.part && opts.part.id === p.id ? opts.part : null);
       for (const o of others()) for (const p of o.parts) polyF(p.pts, o.who === 'screen' ? 'rgba(15,45,82,.92)' : 'rgba(226,40,62,.85)', '#0B1C2E');
-      // каркас
       ctx.strokeStyle = '#E2283E'; ctx.lineWidth = 5 * dpr; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(a.x, b.y); ctx.lineTo(a.x, a.y); ctx.lineTo(b.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-      if (puck) {
-        const q = toPx(puck.u, puck.v), r = Math.max(4, (puck.size || 1) * 0.05 / (U1 - U0) * W);
+      if (opts.aim) reticle(opts.aim, opts.f, opts.drift || 0, opts.ring);
+      if (opts.hit) {
+        const q = toPx(opts.aim.u, opts.aim.v), r2 = toPx(opts.hit.u, Math.max(0, opts.hit.v));
+        ctx.setLineDash([4 * dpr, 4 * dpr]); ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1.5 * dpr;
+        ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(r2.x, r2.y); ctx.stroke(); ctx.setLineDash([]);
+      }
+      if (opts.puck) {
+        const q = toPx(opts.puck.u, opts.puck.v), r = Math.max(4, (opts.puck.size || 1) * 0.05 * mpx);
         ctx.fillStyle = 'rgba(63,215,255,.35)'; ctx.beginPath(); ctx.arc(q.x, q.y, r * 2.2, 0, 7); ctx.fill();
         ctx.fillStyle = '#05090F'; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, 7); ctx.fill();
       }
     }
 
-    // королевская дорога: пас, вратарь переезжает с задержкой
-    const lvl = P.LEVELS[set.level];
-    function goalieAt(t) {
-      if (mode.id === 'royal') {
-        if (!received) return { ...sc.G };
-        const tt = Math.max(0, t - shiftAt - lvl.reaction * 0.8);
-        const d = Math.hypot(sc.Gend.x - sc.G.x, sc.Gend.y - sc.G.y), travel = Math.min(1, tt * 2.6 * lvl.move / d);
-        return { x: sc.G.x + (sc.Gend.x - sc.G.x) * ease.inOut(travel), y: sc.G.y + (sc.Gend.y - sc.G.y) * ease.inOut(travel) };
+    /* Прицел: крест в точке прицеливания, эллипс — куда реально уйдёт 9 бросков из 10 при этой силе.
+       В профи вокруг креста кольцо силы. В движении у новичка эллипс сдвинут на снос. */
+    function reticle(p, f, drift, ring) {
+      const k = kOf(f), sd = sdOf(k), col = powerColor(f);
+      const q = toPx(p.u, p.v), c = toPx(p.u + drift, p.v);
+      ctx.fillStyle = col + '33'; ctx.strokeStyle = col; ctx.lineWidth = 2 * dpr;
+      ctx.beginPath(); ctx.ellipse(c.x, c.y, Math.max(3, 2 * sd * mpx), Math.max(3, 1.6 * sd * mpx), 0, 0, 7); ctx.fill(); ctx.stroke();
+      const L = 9 * dpr;
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 * dpr;
+      ctx.beginPath(); ctx.moveTo(q.x - L, q.y); ctx.lineTo(q.x + L, q.y); ctx.moveTo(q.x, q.y - L); ctx.lineTo(q.x, q.y + L); ctx.stroke();
+      if (ring) {
+        const R0 = 30 * dpr;
+        ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 6 * dpr; ctx.beginPath(); ctx.arc(q.x, q.y, R0, 0, 7); ctx.stroke();
+        ctx.strokeStyle = col; ctx.beginPath(); ctx.arc(q.x, q.y, R0, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); ctx.stroke();
+        ctx.font = `800 ${13 * dpr}px Unbounded, sans-serif`; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+        ctx.fillText(Math.round(k) + ' км/ч', q.x, q.y - R0 - 8 * dpr);
       }
-      return G;
     }
 
-    let live = true;
+    const tri = sec => { const p = (sec / 0.85) % 2; return p < 1 ? p : 2 - p; };
+    const curF = () => (pro ? (charge ? tri(now() - charge.t) : 0) : power);
+    const driftPreview = f => (!pro && vx && aim ? P.DRIFT * vx * P.flightTime(S, aim, kOf(f) / 3.6) : 0);
+
+    function status() {
+      if (phase !== 'aim') return;
+      if (!ready) live$.textContent = sc.passAt ? 'Пас идёт… готовь клюшку' : 'Бросок от синей…';
+      else if (pro) live$.textContent = charge ? `${Math.round(kOf(curF()))} км/ч · разброс ±${Math.round(sdOf(kOf(curF())) * 200)} см` : 'Зажми точку в воротах, отпусти — бросок';
+      else live$.textContent = aim ? (sc.passAt || sc.saveAt ? 'Бросай в касание!' : 'Прицел есть — бросай') : 'Нажми точку в воротах';
+      if (shootBtn) shootBtn.disabled = !(aim && ready);
+    }
+
     const loop = () => {
-      if (!live) return;
-      const t = (performance.now() - t0) / 1000;
-      if (mode.id === 'royal') G = goalieAt(t);
-      drawMap(); drawFaceCv(goalieSil(), received ? null : null);
+      if (!live || phase !== 'aim') return;
+      step(now());
+      drawMap();
+      const f = curF();
+      frame(goalieSil(), aim ? { aim, f, drift: driftPreview(f), ring: pro && !!charge } : {});
+      if (pro && charge) status();
       requestAnimationFrame(loop);
     };
 
-    async function dragStep(dir) {
-      if (!received || busy) return;
-      busy = true;
-      const from = { ...S }, to = { x: clamp(S.x + dir * 1.3, -6, 6), y: S.y };
-      const gFrom = { ...G }, gTo = P.goaliePos(to, 0.9);
-      await tween(350, k => { S = { x: from.x + (to.x - from.x) * k, y: S.y }; });
-      await tween(Math.max(0, lvl.reaction * 1000), () => {});
-      tween(380 / lvl.move, k => { G = { x: gFrom.x + (gTo.x - gFrom.x) * k, y: gFrom.y + (gTo.y - gFrom.y) * k }; });
-      busy = false;
-    }
-    let busy = false;
-
-    if (mode.id === 'royal') {
-      hud.firstChild.textContent = 'Пас идёт…';
-      setTimeout(() => { received = true; shiftAt = (performance.now() - t0) / 1000; hud.firstChild.textContent = 'Бросай в касание!'; }, 700 + Math.random() * 300);
-    }
-    requestAnimationFrame(loop);
-
-    // свайп
-    let track = [];
+    // ввод
     face.style.touchAction = 'none';
-    face.addEventListener('pointerdown', ev => { if (!received || busy) return; track = [{ x: ev.offsetX, y: ev.offsetY, t: performance.now() }]; face.setPointerCapture(ev.pointerId); });
-    face.addEventListener('pointermove', ev => { if (track.length) track.push({ x: ev.offsetX, y: ev.offsetY, t: performance.now() }); });
-    face.addEventListener('pointerup', ev => {
-      if (!track.length) return;
-      const end = { x: ev.offsetX, y: ev.offsetY, t: performance.now() };
-      track.push(end);
-      const start = track[0];
-      if (Math.hypot(end.x - start.x, end.y - start.y) < 30 && end.t - start.t > 250) { track = []; toast('Свайпни от шайбы к воротам'); return; }
-      const recent = track.filter(p => end.t - p.t < 110);
-      const p0 = recent[0];
-      const pxs = Math.hypot(end.x - p0.x, end.y - p0.y) / Math.max(16, end.t - p0.t) * 1000 / face.clientHeight;
-      const frac = clamp((pxs - 1.2) / 6, 0, 1);
-      track = [];
-      shoot(toUV(end.x, end.y), frac);
+    face.addEventListener('pointerdown', ev => {
+      if (phase !== 'aim') return;
+      aim = toUV(ev.offsetX, ev.offsetY);
+      if (pro) { charge = { t: now() }; face.setPointerCapture(ev.pointerId); }
+      status();
     });
-    // начальная точка «шайба» внизу — визуальная подсказка
-    drawMap();
+    face.addEventListener('pointermove', ev => { if (pro && charge && phase === 'aim') aim = toUV(ev.offsetX, ev.offsetY); });
+    const release = () => {
+      if (!pro || !charge || phase !== 'aim') return;
+      const f = curF(); charge = null;
+      if (!ready) { toast(sc.passAt ? 'Рано: шайба ещё не пришла' : 'Рано: шайба ещё у вратаря'); aim = null; status(); return; }
+      shoot(aim, f);
+    };
+    face.addEventListener('pointerup', release);
+    face.addEventListener('pointercancel', () => { charge = null; });
 
-    async function shoot(aim, frac) {
-      busy = true; live = false;
-      const k = minK + frac * (maxK - minK);
-      const speedMs = k / 3.6;
-      const t = (performance.now() - t0) / 1000;
-      const gNow = goalieAt(t); G = gNow;
-      let target = P.scatter(aim, (k - minK) / (150 - minK));
-      let delay = 0;
-      if (mode.id === 'royal') {
-        const tt = t - shiftAt;
-        if (tt < 0.9) delay += 0.06; // бросок в касание: вратарь ещё в движении и не успел «встать»
-      }
+    live = true; status(); requestAnimationFrame(loop);
+
+    async function shoot(aimP, f) {
+      phase = 'flight';
+      const k = kOf(f), speedMs = k / 3.6;
+      const notSet = unset();
+      const sil = goalieSil();
+      let target = P.scatter(aimP, (k - minK) / (150 - minK), Math.random, mult);
+      const drift = vx ? P.DRIFT * vx * P.flightTime(S, target, speedMs) : 0;
+      target = { u: target.u + drift, v: target.v };
+      let delay = notSet ? P.TRACK.notSet : 0;
+      let screened = false;
       if (sc.screen) {
         const sp = P.project(S, { ...sc.screen, h: 1 });
-        if (Math.abs(target.u - sp.u) < 0.75) delay += 0.2; // вратарь не видит выпуск
+        if (Math.abs(target.u - sp.u) < 0.75) { delay += P.TRACK.screen; screened = true; }
       }
-      const sil = goalieSil();
       const r = P.resolveShot({ S, target, speedMs, goalie: { sil, level: set.level, delay }, others: others() });
-      // анимация: шайба летит (замедление ×3), часть вратаря тянется к шайбе
       const dur = Math.min(1600, r.T * 3000);
       const part = sil.find(p => p.id === r.part);
       let shift = null;
@@ -409,23 +490,32 @@ function runGame(mode, set, rerender) {
       }
       const startT = (r.reaction || 0.2) / r.T;
       await tween(dur, kk => {
-        const pu = { u: target.u * kk, v: target.v * kk, size: 2.4 - kk * 1.4 };
+        const pu = { u: target.u * kk, v: Math.max(0, target.v * kk), size: 2.4 - kk * 1.4 };
         const ps = shift && kk > startT ? { id: shift.id, u: shift.du * Math.min(1, (kk - startT) / (1 - startT)), v: shift.dv * Math.min(1, (kk - startT) / (1 - startT)) } : null;
-        drawFaceCv(sil, { u: pu.u, v: Math.max(0, pu.v), size: pu.size }, ps);
+        frame(sil, { aim: aimP, f, part: ps, puck: pu });
       }, ease.linear);
+      frame(sil, { aim: aimP, f, part: shift ? { id: shift.id, u: shift.du, v: shift.dv } : null, puck: { u: target.u, v: Math.max(0, target.v), size: 1 }, hit: target });
+      phase = 'done';
       const goal = r.result === 'goal';
       results.push(goal);
-      logItem(session, { mode: mode.id, level: set.level, principle: mode.principle, verdict: goal ? 'best' : 'bad', result: r.result, kmh: Math.round(k), timeMs: 0,
-        S: [+S.x.toFixed(1), +S.y.toFixed(1)], target: [+target.u.toFixed(2), +target.v.toFixed(2)] });
+      logItem(session, { mode: mode.id, ctrl: pro ? 'pro' : 'novice', level: set.level, principle: mode.principle, verdict: goal ? 'best' : 'bad', result: r.result, kmh: Math.round(k), timeMs: 0,
+        S: [+S.x.toFixed(1), +S.y.toFixed(1)], aim: [+aimP.u.toFixed(2), +aimP.v.toFixed(2)], target: [+target.u.toFixed(2), +target.v.toFixed(2)] });
+      live$.textContent = '';
+      if (pro) live$.parentNode.style.display = 'none';
+      if (shootBtn) shootBtn.disabled = true;
+      const miss = Math.round(Math.hypot(target.u - aimP.u, target.v - aimP.v) * 100);
       hud.innerHTML = '';
       hud.append(h('span.shot-res.' + (goal ? 'g' : 'n'), { goal: 'ГОЛ', save: 'СЕЙВ', post: 'ШТАНГА', miss: 'МИМО', blocked: 'БЛОК' }[r.result]),
-        h('span.muted', ` ${Math.round(k)} км/ч · полёт ${r.T.toFixed(2)} с`), h('p.explain', { style: { margin: '6px 0 0' } }, explainShot(r, sc, mode)),
+        h('span.muted', ` ${Math.round(k)} км/ч · полёт ${r.T.toFixed(2)} с`),
+        h('p.aim-line', `Прицел ✕ → попадание ● : ${miss} см${drift ? ` (из них снос в движении ${Math.round(Math.abs(drift) * 100)} см)` : ''}. Разброс на этой силе ±${Math.round(sdOf(k) * 200)} см.`),
+        h('p.explain', { style: { margin: '6px 0 0' } }, explainShot(r, sc, mode, { notSet, screened })),
         h('button.btn.primary.block', { style: { marginTop: '10px' }, onclick: round }, results.length < SHOTS ? 'Следующий бросок' : 'Итоги'));
-      busy = false;
+      setTimeout(() => hud.scrollIntoView({ behavior: 'smooth', block: 'end' }), 50);
     }
   }
 
   function finish() {
+    live = false;
     if (!ended) { ended = true; finishSession(session); }
     const g = results.filter(Boolean).length;
     inner.innerHTML = '';
@@ -438,13 +528,47 @@ function runGame(mode, set, rerender) {
   round();
 }
 
-function explainShot(r, sc, mode) {
-  if (r.result === 'miss') return 'Мимо створа. Сильный бросок даёт разброс — иногда точнее бросить чуть слабее.';
+const powerColor = f => (f < 0.45 ? '#2EE59D' : f < 0.75 ? '#FFC53D' : '#FF4D6A');
+
+function explainShot(r, sc, mode, { notSet, screened }) {
+  if (r.result === 'miss') return 'Мимо створа. Смотри на кружок: если он вылезает за штангу или перекладину, часть бросков уйдёт мимо. Целься глубже в створ или бросай чуть слабее.';
   if (r.result === 'post') return 'Штанга! Совсем чуть-чуть — целься на ширину шайбы внутрь.';
-  if (r.result === 'blocked') return r.by === 'screen' ? 'Попал в своего на пятаке. Бросай в коридор рядом с заслоном.' : 'Шайба в защитника. Смени угол перед броском — протяжка в сторону.';
+  if (r.result === 'blocked') return r.by === 'screen' ? 'Попал в своего на пятаке. Бросай в коридор рядом с заслоном.' : 'Шайба в защитника. Протяни шайбу в сторону — выйди из его линии и бросай.';
   const part = { glove: 'ловушка', blocker: 'блин', pads: 'щитки', body: 'корпус', head: 'корпус', legL: 'щиток', legR: 'щиток', stick: 'клюшка' }[r.part] || 'вратарь';
-  if (r.result === 'save' && r.reason === 'body') return `Прямо в вратаря. ${sc.stance === 'butterfly' ? 'В бабочке он закрывает низ — верх открыт.' : 'В стойке открыты низ и между щитков.'}`;
-  if (r.result === 'save') return `Успел: ${part} дотянулся. Шайба летела ${r.T.toFixed(2)} с, на реакцию ушло около ${r.reaction.toFixed(2)} с. Дальше от его рук и щитков — или быстрее выпуск.`;
+  const why = [notSet ? 'вратарь ещё ехал и не встал на угол' : null, screened ? 'заслон закрыл ему выпуск' : null].filter(Boolean).join(', ');
+  if (r.result === 'save' && r.reason === 'body') return `Прямо в вратаря. ${sc.stance === 'butterfly' ? 'В бабочке он закрывает низ — верх открыт.' : 'В стойке открыты низ и между щитков.'}${mode.id === 'rebound' || mode.id === 'move' ? ' Бросай в дальнюю от него сторону.' : ''}`;
+  const reached = part === 'ловушка' || part === 'клюшка' ? 'дотянулась' : part === 'щитки' ? 'дотянулись' : 'дотянулся';
+  if (r.result === 'save') return `Успел: ${part} ${reached}. Шайба летела ${r.T.toFixed(2)} с, на реакцию ушло ${r.reaction.toFixed(2)} с. Дальше от его рук и щитков — или быстрее выпуск.`;
   const left = Math.max(0, r.T - r.reaction);
-  return `Вратарю не хватило ${(r.need - r.reach).toFixed(2)} м: за ${left.toFixed(2)} с ${part} не дотянулся.${mode.id === 'royal' ? ' Бросок в касание — он ещё ехал.' : ''}`;
+  return `Вратарю не хватило ${(r.need - r.reach).toFixed(2)} м: за ${left.toFixed(2)} с ${part} не ${reached}${why ? ` — ${why}` : ''}.`;
+}
+
+/* ---------------- Как считается ---------------- */
+function model(view) {
+  const lv = Object.values(P.LEVELS).map(l => `${l.name} — ${Math.round(l.reaction * 1000)} мс`).join(', ');
+  const block = (title, rows) => h('div.panel.model', h('b', title), h('ul', rows.map(r => h('li', r))));
+  view.append(
+    h('p.lead', 'Игра — тренажёр геометрии и времени, а не предсказание настоящего броска. Здесь честно: что посчитано точно, что взято приближённо и чего в модели нет.'),
+    block('Точно (геометрия)', [
+      'Ворота 1,83 × 1,22 м, шайба 7,6 см. Площадка 60 × 30, ворота в 4 м от борта.',
+      'Видимый угол и закрытая часть ворот: силуэт вратаря проецируется на створ лучами из точки броска. Вышел ближе — закрыл больше.',
+      'Время полёта = расстояние ÷ скорость. Шайба летит по прямой с постоянной скоростью.',
+    ]),
+    block('Приближённо (из публичных данных и тренерской практики)', [
+      `Реакция вратаря: ${lv}; плюс случайные ±30 мс.`,
+      'Скорость рук и щитков: ловушка быстрее всего, корпус медленнее всего; смещение в бабочке и приставным шагом — около 2,4 м/с, из положения после сейва — 1,7 м/с.',
+      'Силуэты «бабочка» и «стойка» — прямоугольники по размерам взрослого вратаря. Детский вратарь меньше — открыто больше, особенно верх.',
+      `Разброс растёт с силой: ±${Math.round(P.spread(0) * 200)} см на 40 км/ч, ±${Math.round(P.spread((95 - 40) / 110) * 200)} см на 95, ±${Math.round(P.spread(1) * 200)} см на 150. У новичка разброс ×0,6.`,
+      `Заслон: если шайба проходит рядом с партнёром, вратарь видит выпуск на ${Math.round(P.TRACK.screen * 1000)} мс позже.`,
+      `Вратарь не встал на угол (ещё едет) — плюс ${Math.round(P.TRACK.notSet * 1000)} мс к реакции.`,
+      `Бросок в движении: шайба сохраняет боковую скорость игрока (${P.SKATE} м/с). Руки гасят большую часть, в модели остаётся ${Math.round(P.DRIFT * 100)} % сноса.`,
+    ]),
+    block('Не учитывается', [
+      'Подставление клюшки и рикошеты, кроме блока защитником.',
+      'Как вратарь читает корпус и клюшку бросающего, обманные движения, бросок «через ногу» защитника.',
+      'Вращение и «парусность» шайбы, торможение о воздух, подскок на льду.',
+      'Техника самого броска: перенос веса, прогиб клюшки, точка выпуска — это лёд и тренер.',
+    ]),
+    h('div.panel.model', h('b', 'Проверь на льду'),
+      h('p.muted.small', { style: { margin: '6px 0 0' } }, 'По 10 бросков из трёх точек (слот, круг, синяя) в мишени по углам. Сравни, где получалось лучше, с тем, что показывает «Геометрия». Если на льду иначе — значит, детали техники важнее геометрии, и это повод для разговора с тренером.')));
 }

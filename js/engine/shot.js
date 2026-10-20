@@ -137,11 +137,26 @@ export function resolveShot({ S, target, speedMs, goalie, others = [], rng = Mat
   return { ...out, result: best.margin >= 0 ? 'save' : 'goal', reaction, part: best.part, need: best.d, reach: best.reach };
 }
 
-/* Разброс: чем сильнее бросок, тем шире (метры на плоскости ворот). */
-export function scatter(target, speedFrac, rng = Math.random) {
-  const sd = 0.025 + 0.07 * speedFrac * speedFrac;
+/* Разброс: чем сильнее бросок, тем шире (метры на плоскости ворот).
+   speedFrac — доля от 40…150 км/ч. mult — множитель режима (новичок 0,6). sd — стандартное отклонение по ширине. */
+export const spread = (speedFrac, mult = 1) => (0.025 + 0.07 * speedFrac * speedFrac) * mult;
+export function scatter(target, speedFrac, rng = Math.random, mult = 1) {
+  const sd = spread(speedFrac, mult);
   const g = () => { let s = 0; for (let i = 0; i < 4; i++) s += rng(); return (s - 2) / 0.58; };
   return { u: target.u + g() * sd, v: target.v + g() * sd * 0.8 };
 }
+
+/* Вратарь следит за шайбой с задержкой реакции и ограниченной скоростью смещения.
+   Используется в режимах, где шайба или бросающий двигаются: пас, бросок в движении, протяжка, добивание. */
+export const TRACK = {
+  shuffle: 2.4,      // м/с — приставной шаг / толчок в бабочке (приближённо)
+  fromDown: 1.7,     // м/с — после сейва, из бабочки
+  notSet: 0.06,      // с — доп. задержка, если в момент выпуска вратарь ещё едет
+  screen: 0.2,       // с — бросок сквозь заслон: вратарь поздно видит выпуск
+};
+/* Бросок в движении: шайба сохраняет боковую скорость игрока. Руки игрока гасят большую часть сноса
+   (клюшка и кисть), в модели остаётся DRIFT от полного сноса vx·T. */
+export const DRIFT = 0.12;
+export const SKATE = 5.2; // м/с — скорость игрока поперёк слота в режиме «В движении»
 
 export const kmh = ms => Math.round(ms * 3.6);
