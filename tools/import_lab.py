@@ -138,7 +138,7 @@ def main():
             'id': cid, 'version': 1, 'deck': deck, 'phase': n.get('phase', TOPIC.get(topic, 'oz')),
             'principle': n.get('principle', 'support-triangle'), 'difficulty': s.get('level', 2),
             'title': s['title'], 'view': window(ys),
-            'story': s['story'],
+            'story': n.get('story', s['story']),
             'question': {'kind': 'choice', 'text': n.get('question', s['question'])},
             'us': us, 'them': them, 'puck': {'x': puck[0], 'y': puck[1]},
             'options': options, 'cue': s.get('cue'), 'ice': s.get('ice'),
