@@ -593,7 +593,7 @@ input.power::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; b
 .pov-cv { display: block; width: 100%; border-radius: 14px; margin-bottom: 8px; touch-action: none; cursor: ew-resize; }
 .rink-wrap.pov-on .rink-svg { max-height: 26vh; width: auto; margin: 0 auto; display: block; }
 .pov-cone { fill: rgba(63, 215, 255, 0.16); stroke: rgba(0, 163, 224, 0.7); stroke-width: 0.12; pointer-events: none; }
-.pov-btn { position: absolute; left: 14px; bottom: 14px; z-index: 3; height: 36px; padding: 0 10px; display: flex; align-items: center; gap: 6px;
+.pov-btn { position: absolute; left: 14px; top: 14px; z-index: 3; height: 36px; padding: 0 10px; display: flex; align-items: center; gap: 6px;
   border-radius: 10px; border: 1px solid var(--stroke-hi); background: rgba(4,8,14,.75); color: #fff; font: 700 12px var(--body); cursor: pointer; }
 .pov-btn svg { width: 18px; height: 18px; }
 .pov-btn.on { background: var(--cyan); color: #04131F; border-color: var(--cyan); }
