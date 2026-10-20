@@ -5,7 +5,7 @@
    (хват), согнуты ли колени. Над головой — подпись амплуа, как на схеме.
    Источник правды — Scene: позиции, направление корпуса и хват берутся из её сущностей каждый кадр. */
 import { fromScreen } from './rink.js';
-import { skaterImage, goalieImage, GLOVES, ready, preload } from './sprites.js';
+import { skaterImage, goalieImage, ownStickImage, arenaImage, GLOVES, META, ready, preload } from './sprites.js';
 
 const EYE = 1.6, PITCH = 0.11, FOV = 80 * Math.PI / 180, NEAR = 0.35;
 const NS = 'http://www.w3.org/2000/svg';
@@ -118,9 +118,20 @@ export class Pov {
     const sky = ctx.createLinearGradient(0, 0, 0, cy);
     sky.addColorStop(0, '#060B14'); sky.addColorStop(1, '#14243A');
     ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
-    // светильники под сводом — ровные полосы, без засветки
-    ctx.fillStyle = 'rgba(235,245,255,.85)';
-    for (let k = 0; k < 6; k++) { const x = W * (0.1 + k * 0.16); ctx.fillRect(x, cy * 0.12, W * 0.05, 2.5 * dpr); }
+    // фон арены — панорама (свод, прожекторы, трибуны, стекло), прокручивается вместе с поворотом головы.
+    // Берём верхнюю часть картинки до кромки борта; низ панорамы — на уровне верха стекла у дальнего борта.
+    const arena = arenaImage();
+    if (ready(arena)) {
+      const SRC_H = 0.64 * arena.naturalHeight;          // до кромки борта (ниже — свой борт и лёд в 3D)
+      const bottom = cy - f * ((2.4 - EYE) / 32) + f * Math.tan(PITCH) * 0.2;
+      const dh = Math.max(bottom, H * 0.2), dw = arena.naturalWidth * dh / SRC_H;
+      const per = Math.max(dw, 2 * Math.PI * f);         // полный оборот = ширина панорамы
+      let off = -((hd / (2 * Math.PI)) * per) % dw; if (off > 0) off -= dw;
+      for (let x = off; x < W; x += dw) ctx.drawImage(arena, 0, 0, arena.naturalWidth, SRC_H, x, 0, dw, dh);
+    } else {
+      ctx.fillStyle = 'rgba(235,245,255,.85)';
+      for (let k = 0; k < 6; k++) { const x = W * (0.1 + k * 0.16); ctx.fillRect(x, cy * 0.12, W * 0.05, 2.5 * dpr); }
+    }
 
     // сегменты борта: от дальних к ближним
     const segs = [];
@@ -132,7 +143,7 @@ export class Pov {
     segs.sort((x, y) => y.d - x.d);
     // трибуны: за стеклом, уходят вверх и назад
     const out = (p, k) => { const nx = p[0], ny = p[1] - L / 2, n = Math.hypot(nx, ny * 0.5) || 1; return [p[0] + nx / n * k, p[1] + ny / n * k]; };
-    for (const s of segs) {
+    if (!ready(arena)) for (const s of segs) {
       const a0 = out(s.a, 1.2), b0 = out(s.b, 1.2), a1 = out(s.a, 12), b1 = out(s.b, 12);
       fillPoly([[a0[0], a0[1], 2.4], [b0[0], b0[1], 2.4], [b1[0], b1[1], 9], [a1[0], a1[1], 9]], s.i % 2 ? '#132B4C' : '#16315A');
     }
@@ -248,18 +259,17 @@ export class Pov {
     // тень под коньками
     ctx.fillStyle = 'rgba(30,60,90,.22)'; ctx.beginPath(); ctx.ellipse(foot.x, foot.y, 0.55 * k, 0.14 * k, 0, 0, 7); ctx.fill();
     if (en.goalie) {
-      const img = goalieImage(team, cosA < 0);
-      const hpx = 1.55 * k, sc = hpx / 300;
-      if (ready(img)) ctx.drawImage(img, foot.x - 100 * sc, foot.y - 294 * sc, 200 * sc, 300 * sc);
+      const img = goalieImage(team, cosA < 0), M = META.goalie;
+      const hpx = 1.6 * k, sc = hpx / M.h;
+      if (ready(img)) ctx.drawImage(img, foot.x - M.ax * sc, foot.y - M.ay * sc, M.w * sc, M.h * sc);
       return { x: foot.x, y: foot.y - hpx * 0.95, text: 'ВР', color: team === 'us' ? '#0F2D52' : '#D8263C', size: k };
     }
     const view = cosA > 0.5 ? 'front' : cosA < -0.5 ? 'back' : 'side';
     const faceLeft = ahead ? ahead.x < foot.x : false;
     const mirror = view === 'side' ? !faceLeft : false;
-    const num = numberOf(en.data.id || it.id);
-    const img = skaterImage(team, view, num);
-    const hpx = 1.85 * k, sc = hpx / 300; // рост в шлеме ~1,8 м, холст 300 единиц
-    const toScr = ([gx, gy]) => ({ x: foot.x + (mirror ? 100 - gx : gx - 100) * sc, y: foot.y + (gy - 294) * sc });
+    const img = skaterImage(team, view), M = META.skater;
+    const hpx = 1.85 * k, sc = hpx / M.h; // рост в шлеме ~1,75 м (фигура 560 из 600 единиц холста)
+    const toScr = ([gx, gy]) => ({ x: foot.x + (mirror ? M.ax - gx : gx - M.ax) * sc, y: foot.y + (gy - M.ay) * sc });
     // клюшка: крюк — в точке stick или впереди на стороне хвата; древко от нижней перчатки
     const st = en.data.stick;
     const blade = st ? P(st[0], st[1], 0.03) : P(p.x + fx * 0.95 + lx * hs * 0.45, p.y + fy * 0.95 + ly * hs * 0.45, 0.03);
@@ -279,7 +289,7 @@ export class Pov {
     if (ready(img)) {
       ctx.save();
       if (mirror) { ctx.translate(foot.x, 0); ctx.scale(-1, 1); ctx.translate(-foot.x, 0); }
-      ctx.drawImage(img, foot.x - 100 * sc, foot.y - 294 * sc, 200 * sc, 300 * sc);
+      ctx.drawImage(img, foot.x - M.ax * sc, foot.y - M.ay * sc, M.w * sc, M.h * sc);
       ctx.restore();
     }
     if (view !== 'back') stick();
@@ -292,25 +302,20 @@ export class Pov {
     const ctx = this.ctx, H = this.cv.height, W = this.cv.width, dpr = this.dpr;
     const hand = (en && en.hand) || 'L', hs = hand === 'L' ? 1 : -1;
     const lx = -fy, ly = fx;
-    const b = P(me.x + fx * 1.15 + lx * hs * 0.3, me.y + fy * 1.15 + ly * hs * 0.3, 0.03);
-    const t = P(me.x + fx * 1.2 + lx * hs * 0.62, me.y + fy * 1.2 + ly * hs * 0.62, 0.03);
-    if (!b || !t) return;
+    // крюк лежит на льду в 1,1 м впереди, на стороне хвата; перчатка с рукавом уходит в нижний угол кадра
+    const b = P(me.x + fx * 1.15 + lx * hs * 0.45, me.y + fy * 1.15 + ly * hs * 0.45, 0.03);
+    const img = ownStickImage(hand);
+    if (b && ready(img)) {
+      // в картинке (1024 × 512) середина крюка — около (0,36; 0,85) ширины/высоты у левого хвата, у правого — зеркально
+      const iw = W * 0.8, ih = iw / 2, bx = hs > 0 ? 0.36 : 0.64;
+      const x = b.x - bx * iw;
+      ctx.drawImage(img, x, Math.min(Math.max(b.y, H * 0.9), H * 0.99) - 0.85 * ih, iw, ih);
+      return;
+    }
+    if (!b) return;
     const gx = W * (hs > 0 ? 0.86 : 0.14), gy = H * 0.96;
     ctx.lineCap = 'round';
     ctx.strokeStyle = '#15181D'; ctx.lineWidth = 14 * dpr; ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(b.x, b.y); ctx.stroke();
-    ctx.strokeStyle = '#2C3440'; ctx.lineWidth = 4 * dpr; ctx.beginPath(); ctx.moveTo(gx, gy - 4 * dpr); ctx.lineTo(b.x, b.y - 3 * dpr); ctx.stroke();
-    ctx.strokeStyle = '#15181D'; ctx.lineWidth = 22 * dpr; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(t.x, t.y); ctx.stroke();
-    ctx.strokeStyle = 'rgba(245,248,252,.95)'; ctx.lineWidth = 14 * dpr;
-    ctx.beginPath(); ctx.moveTo(b.x + (t.x - b.x) * 0.3, b.y + (t.y - b.y) * 0.3); ctx.lineTo(b.x + (t.x - b.x) * 0.8, b.y + (t.y - b.y) * 0.8); ctx.stroke();
-    // перчатка с рукавом: в углу кадра, синяя форма с белой полосой
-    ctx.save(); ctx.translate(gx, gy); ctx.rotate(hs > 0 ? -0.5 : 0.5); if (hs < 0) ctx.scale(-1, 1);
-    const R = 34 * dpr;
-    ctx.fillStyle = '#1B3F7A'; ctx.beginPath(); ctx.ellipse(R * 0.9, R * 0.8, R * 1.3, R * 1.0, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(R * 0.2, R * 0.2, R * 1.6, R * 0.22);
-    ctx.fillStyle = '#16346A'; ctx.strokeStyle = '#0A1426'; ctx.lineWidth = 2 * dpr;
-    ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(-R * 0.6, -R * 0.55, R * 1.3, R * 1.1, R * 0.35); else ctx.rect(-R * 0.6, -R * 0.55, R * 1.3, R * 1.1); ctx.fill(); ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,.35)'; for (const yy of [-0.2, 0.1]) { ctx.beginPath(); ctx.moveTo(-R * 0.45, R * yy); ctx.lineTo(R * 0.5, R * yy); ctx.stroke(); }
-    ctx.restore();
   }
 
   destroy() { this.live = false; window.removeEventListener('resize', this._resize); this.cv.remove(); this.cone.remove(); }
