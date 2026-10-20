@@ -151,6 +151,12 @@ function drawFace(face, sil, others, marks = []) {
 }
 
 
+/* Открыть режим игры напрямую (связка из разбора ситуации). */
+export function openMode(id, rerender = () => {}) {
+  const m = MODES.find(x => x.id === id);
+  if (m) runGame(m, shotSet(), rerender);
+}
+
 /* ---------------- Игра ---------------- */
 const MODES = [
   { id: 'angle', name: 'Угол', line: 'Бросаешь из разных точек. Узнай, откуда ворота открыты, а откуда нет.', principle: null },

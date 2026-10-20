@@ -7,6 +7,11 @@ import { lib, parseKey, verdictOf, explainOf, bestOf } from '../content.js';
 import { state, answer, startSession, logItem, finishSession } from '../core/state.js';
 import { itemPoints, summarize, fastAndSure } from '../engine/scoring.js';
 import { respond } from '../engine/sim.js';
+import { povSwitch } from './povui.js';
+import { similar, filmFor, SHOT_FOR, DRILL_FOR, SHOT_NAME, DRILL_NAME } from './links.js';
+import * as film from './film.js';
+import { openMode } from './shot.js';
+import { openDrill } from './react.js';
 
 const LETTERS = ['А', 'Б', 'В', 'Г'];
 export const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -23,6 +28,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
   const session = preview ? null : startSession(module);
   const rankBefore = summarize(state.sessions).rank.index;
   const results = [];
+  const errCards = [];
   let i = 0, scene = null, ended = false;
   const end = () => { if (session && !ended) { ended = true; finishSession(session); } };
 
@@ -62,6 +68,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
     scene = new Scene(wrap, card, { rink: state.profile.rink, anim: state.profile.anim && !timer });
     window.__hkScene = scene; // для автопроверок
     zoomable(wrap);
+    povSwitch(wrap, scene);
     const skip = h('button.skip', { onclick: () => cancelAll() }, 'Пропустить');
     wrap.append(skip);
     const zone = h('div');
@@ -127,6 +134,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       const timeMs = Math.round(performance.now() - t0);
       const v = opt.id === 'timeout' ? 'bad' : verdictOf(card, variant, opt);
       results.push(v);
+      if (v !== 'best') errCards.push(card);
       inner.querySelector('.dots').replaceWith(dots());
       if (!preview) {
         if (!test) answer(keys[i], v); // контрольный срез не меняет интервалы повторения
@@ -202,6 +210,20 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       } }, 'Показать лучший'), next);
     } else { next.classList.add('only'); actions.append(next); }
     const bestText = h('p.explain', { hidden: true }, h('b', 'Лучше: '), best ? (best.label ? best.label + '. ' : '') + explainOf(card, variant, best) : '');
+    // связка: закрепить ошибку похожей ситуацией, разбором по теме и тренажёром навыка
+    let link = null;
+    if (v !== 'best' && !preview && !timer) {
+      const sim = similar(card, new Set(keys.map(k => parseKey(k).card && parseKey(k).card.id)));
+      const fm = filmFor(card.principle);
+      const sm = SHOT_FOR[card.principle], dm = DRILL_FOR[card.principle];
+      const items = [
+        sim ? h('button.link-chip', { onclick: e => { keys.splice(i + 1, 0, sim); e.currentTarget.disabled = true; e.currentTarget.textContent = 'Добавлена следующей ✓'; next.textContent = 'Дальше'; inner.querySelector('.dots').replaceWith(dots()); } }, h('b', 'Похожая ситуация'), h('span', 'следующей в этой смене')) : null,
+        fm ? h('button.link-chip', { onclick: () => film.watch(fm, () => {}) }, h('b', 'Разбор по теме'), h('span', fm.title)) : null,
+        sm ? h('button.link-chip', { onclick: () => openMode(sm) }, h('b', 'Бросок'), h('span', SHOT_NAME[sm])) : null,
+        dm ? h('button.link-chip', { onclick: () => openDrill(dm) }, h('b', 'Тренажёр'), h('span', DRILL_NAME[dm])) : null,
+      ].filter(Boolean);
+      if (items.length) link = h('div.links', h('div.kicker', 'Закрепить'), h('div.link-row', items));
+    }
     const box = h('div.result',
       h('div.verdict', h('span.tag.' + v, TAG[v]), preview ? null : h('span.plus', `+${pts}`)),
       h('p.explain', opt.id === 'timeout' ? 'Время вышло. На льду у тебя тоже нет лишней секунды — решай по первому взгляду.' : explainOf(card, variant, opt)),
@@ -209,6 +231,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       pr ? h('div.principle', h('b', pr.name), h('span', pr.line)) : null,
       card.cue ? h('p.cue', h('b', 'Куда смотреть: '), card.cue) : null,
       card.ice ? h('p.ice', h('b', 'На льду: '), card.ice) : null,
+      link,
       actions);
     if (v === 'best' && !preview && fastAndSure(state.sessions, card.principle, timeMs)) box.querySelector('.plus').textContent += ' · быстро и точно';
     inner.append(box);
@@ -219,6 +242,10 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
     if (scene) { scene.destroy(); scene = null; }
     end();
     const n = k => results.filter(r => r === k).length;
+    // похожие ситуации на каждую ошибку смены — новая короткая смена «Закрепить»
+    const used = new Set(keys.map(k => parseKey(k).card && parseKey(k).card.id));
+    const fixKeys = [];
+    if (!preview && !test && !timer) for (const c of errCards) { const k = similar(c, used); if (k) { fixKeys.push(k); used.add(parseKey(k).card.id); } }
     const sum = summarize(state.sessions);
     const gained = session ? session.items.reduce((a, it) => a + itemPoints(it), 0) : 0;
     inner.innerHTML = '';
@@ -240,7 +267,8 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
         h('div.tri', h('div.g', h('b', n('best')), h('span', 'лучших')), h('div.o', h('b', n('ok')), h('span', 'можно')), h('div.r', h('b', n('bad')), h('span', 'ошибок'))),
         !preview && sum.rank.index > rankBefore ? h('div.rankup', `Новое звание: ${sum.rank.name}`) : null,
         !preview && sum.streak ? h('p.muted', `Серия: ${sum.streak} ${sum.streak === 1 ? 'день' : sum.streak < 5 ? 'дня' : 'дней'} подряд`) : null,
-        h('div', { style: { marginTop: '28px' } }, h('button.btn.primary.block', { onclick: close }, 'Готово'))));
+        fixKeys.length ? h('button.btn.block', { style: { marginTop: '28px' }, onclick: () => { close(); play(fixKeys, { module: 'fix', onDone }); } }, `Закрепить ошибки: ${fixKeys.length} похожих`) : null,
+        h('div', { style: { marginTop: fixKeys.length ? '10px' : '28px' } }, h('button.btn.primary.block', { onclick: close }, 'Готово'))));
   }
 
   show();

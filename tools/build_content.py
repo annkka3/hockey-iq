@@ -168,6 +168,19 @@ def main():
             c.setdefault('status', 'draft')
             cards.append(c)
 
+    # программа «Центр U15»: каждая ситуация отнесена к одному из пяти блоков (tools/source/program.json)
+    prog_path = os.path.join(SRC, 'program.json')
+    if os.path.exists(prog_path):
+        prog = json.load(open(prog_path, encoding='utf-8'))
+        tracks = {t['id'] for t in prog['tracks']}
+        content['program'] = {'tracks': prog['tracks']}
+        for c in cards:
+            t = prog['cards'].get(c['id'])
+            if t is None: warn(c['id'], 'не отнесена к блоку программы U15')
+            elif t not in tracks: err(c['id'], f'неизвестный блок программы {t}')
+            else: c['track'] = t
+        for cid in prog['cards']:
+            if cid not in seen: warn(cid, 'в program.json есть id, которого нет среди карточек')
     order = {d['id']: i for i, d in enumerate(content['decks'])}
     cards.sort(key=lambda c: (c.get('difficulty', 2), order.get(c['deck'], 99)))
     for w in warnings: print('  внимание:', w)

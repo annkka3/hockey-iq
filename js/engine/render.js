@@ -248,5 +248,5 @@ export class Scene {
     for (const id in this.ents) this.place(id, this.ents[id].home);
   }
 
-  destroy() { this.offTap(); this.svg.remove(); }
+  destroy() { if (this.onDestroy) this.onDestroy(); this.offTap(); this.svg.remove(); }
 }

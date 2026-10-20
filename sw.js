@@ -2,15 +2,15 @@
    Страница, скрипты, стили и контент — сначала сеть (обновления приходят сразу), без сети — из кэша.
    Шрифты, иконки, библиотеки — сначала кэш. Трафик Firebase не трогаем.
    Префикс кэша свой (hk-): на домене annkka3.github.io живут и другие приложения, их кэши не задеваем. */
-const VERSION = 'v10';
+const VERSION = 'v11';
 const PREFIX = 'hk-shell-';
 const CACHE = PREFIX + VERSION;
 const CORE = [
   './', 'index.html', 'config.js', 'store.js', 'manifest.webmanifest', 'css/style.css',
   'js/main.js', 'js/ui.js', 'js/content.js',
   'js/core/state.js', 'js/core/sync.js',
-  'js/engine/rink.js', 'js/engine/render.js', 'js/engine/anim.js', 'js/engine/srs.js', 'js/engine/scoring.js', 'js/engine/shot.js', 'js/engine/sim.js',
-  'js/modules/today.js', 'js/modules/decks.js', 'js/modules/play.js', 'js/modules/me.js', 'js/modules/parent.js', 'js/modules/soon.js', 'js/modules/shot.js', 'js/modules/react.js', 'js/modules/editor.js', 'js/modules/film.js', 'js/modules/cards.js',
+  'js/engine/rink.js', 'js/engine/render.js', 'js/engine/anim.js', 'js/engine/srs.js', 'js/engine/scoring.js', 'js/engine/shot.js', 'js/engine/sim.js', 'js/engine/pov.js',
+  'js/modules/today.js', 'js/modules/decks.js', 'js/modules/play.js', 'js/modules/me.js', 'js/modules/parent.js', 'js/modules/soon.js', 'js/modules/shot.js', 'js/modules/react.js', 'js/modules/editor.js', 'js/modules/film.js', 'js/modules/cards.js', 'js/modules/links.js', 'js/modules/povui.js',
   'data/content.json', 'fonts/Unbounded.woff2', 'fonts/Manrope.woff2',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];
