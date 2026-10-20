@@ -76,8 +76,11 @@ export function zoomable(wrap) {
     e.stopPropagation();
     const on = wrap.classList.toggle('rink-full');
     b.textContent = on ? '✕' : '⤢';
+    b.setAttribute('aria-label', on ? 'Выйти из полноэкранного режима' : 'Площадка на весь экран');
     document.body.classList.toggle('no-scroll', on);
+    if (on) document.addEventListener('keydown', esc); else document.removeEventListener('keydown', esc);
   } }, '⤢');
+  const esc = e => { if (e.key === 'Escape' && wrap.classList.contains('rink-full')) b.click(); };
   wrap.append(b);
   return b;
 }

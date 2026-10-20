@@ -486,13 +486,20 @@ function runGame(mode, set, rerender) {
     /* Своя клюшка снизу кадра: на стороне хвата из профиля; шайба у крюка, пока не бросил. */
     function ownStick(withPuck) {
       const W = face.width, Hh = face.height, hs = (state.profile.hand || 'L') === 'L' ? 1 : -1;
-      const px = W / 2, py = Hh * 0.88;
-      const heel = { x: px - hs * W * 0.06, y: py + Hh * 0.04 }, toe = { x: px - hs * W * 0.3, y: py + Hh * 0.1 };
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = '#14171C'; ctx.lineWidth = 16 * dpr; ctx.beginPath(); ctx.moveTo(heel.x, heel.y); ctx.lineTo(px - hs * W * 0.62, Hh * 0.62); ctx.stroke();
-      ctx.lineWidth = 26 * dpr; ctx.beginPath(); ctx.moveTo(heel.x, heel.y); ctx.lineTo(toe.x, toe.y); ctx.stroke();
-      ctx.strokeStyle = '#EEF2F6'; ctx.lineWidth = 18 * dpr;
-      for (const k of [0.25, 0.45, 0.65]) { ctx.beginPath(); ctx.moveTo(heel.x + (toe.x - heel.x) * k, heel.y + (toe.y - heel.y) * k); ctx.lineTo(heel.x + (toe.x - heel.x) * (k + 0.12), heel.y + (toe.y - heel.y) * (k + 0.12)); ctx.stroke(); }
+      const px = W / 2, py = Hh * 0.9;
+      // как на референсе: руки за кадром сверху-сбоку, древко спускается к пятке крюка,
+      // крюк лежит на льду носком К шайбе (у левши — вправо, у правши — влево)
+      const heel = { x: px - hs * W * 0.24, y: Hh * 0.985 }, toe = { x: px - hs * W * 0.065, y: Hh * 0.925 };
+      const top = { x: px - hs * W * 0.78, y: Hh * 0.6 };
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#14171C'; ctx.lineWidth = 15 * dpr; ctx.beginPath(); ctx.moveTo(top.x, top.y); ctx.lineTo(heel.x, heel.y - 6 * dpr); ctx.stroke();
+      ctx.strokeStyle = '#2E3642'; ctx.lineWidth = 4 * dpr; ctx.beginPath(); ctx.moveTo(top.x, top.y - 4 * dpr); ctx.lineTo(heel.x, heel.y - 11 * dpr); ctx.stroke();
+      // крюк: изогнутая лопасть с белой лентой
+      const mid = { x: (heel.x + toe.x) / 2, y: Math.max(heel.y, toe.y) + 6 * dpr };
+      ctx.strokeStyle = '#14171C'; ctx.lineWidth = 24 * dpr;
+      ctx.beginPath(); ctx.moveTo(heel.x, heel.y - 6 * dpr); ctx.quadraticCurveTo(mid.x, mid.y, toe.x, toe.y); ctx.stroke();
+      ctx.strokeStyle = '#EEF2F6'; ctx.lineWidth = 15 * dpr; ctx.setLineDash([9 * dpr, 4 * dpr]);
+      ctx.beginPath(); ctx.moveTo(heel.x + (toe.x - heel.x) * 0.2, heel.y - 4 * dpr); ctx.quadraticCurveTo(mid.x, mid.y - 2 * dpr, toe.x - (toe.x - heel.x) * 0.1, toe.y + 1 * dpr); ctx.stroke(); ctx.setLineDash([]);
       if (withPuck) {
         const r = 18 * dpr;
         ctx.fillStyle = 'rgba(5,10,16,.18)'; ctx.beginPath(); ctx.ellipse(px, py + r * 0.6, r * 1.3, r * 0.4, 0, 0, 7); ctx.fill();
@@ -515,9 +522,20 @@ function runGame(mode, set, rerender) {
       // контактная тень под вратарём
       const all = sil.map(box), minX = Math.min(...all.map(b => b.x)), maxX = Math.max(...all.map(b => b.x + b.w)), baseY = Math.max(...all.map(b => b.y + b.h));
       ctx.fillStyle = 'rgba(20,40,70,.25)'; ctx.beginPath(); ctx.ellipse((minX + maxX) / 2, baseY, (maxX - minX) * 0.55, 6 * dpr, 0, 0, 7); ctx.fill();
+      // закрытая вратарём часть ворот (точная проекция модели) — полупрозрачной тенью; при остром угле
+      // она сильно вытягивается, а рисунок вратаря сохраняет пропорции и стоит в её центре
+      ctx.fillStyle = 'rgba(212,42,60,.16)';
+      for (const p of sil) {
+        const sh = partShift && partShift.id === p.id ? partShift : null;
+        ctx.beginPath(); p.pts.forEach((q, i) => { const pp = toPx(q.u + (sh ? sh.u : 0), q.v + (sh ? sh.v : 0)); i ? ctx.lineTo(pp.x, pp.y) : ctx.moveTo(pp.x, pp.y); }); ctx.closePath(); ctx.fill();
+      }
+      const NAT = { head: 100 / 110, body: 200 / 170, glove: 1, blocker: 100 / 120, stick: 200 / 60, legL: 90 / 200, legR: 90 / 200, pads: 300 / 90 };
       const order = ['stick', 'pads', 'legL', 'legR', 'body', 'blocker', 'glove', 'head'];
       for (const id of order) for (const p of sil.filter(q => q.id === id)) {
         const b = box(p);
+        const ar = NAT[id] || 1, bar = b.w / b.h;
+        if (bar > ar * 1.4) { const w = b.h * ar * 1.4; b.x += (b.w - w) / 2; b.w = w; }
+        else if (bar < ar / 1.4) { const hh = b.w / ar * 1.4; b.y += (b.h - hh); b.h = hh; }
         const img = goaliePartImage(id === 'legR' ? 'legL' : id);
         if (id === 'body') { // нагрудник шире корпуса: плечи и руки
           const ex = b.w * 0.35;
