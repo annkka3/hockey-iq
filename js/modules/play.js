@@ -4,7 +4,7 @@ import { h, icon, toast, zoomable } from '../ui.js';
 import { Scene } from '../engine/render.js';
 import { cancelAll, tween } from '../engine/anim.js';
 import { lib, parseKey, verdictOf, explainOf, bestOf } from '../content.js';
-import { state, answer, startSession, logItem, finishSession } from '../core/state.js';
+import { state, answer, startSession, logItem, logTouch, finishSession } from '../core/state.js';
 import { itemPoints, summarize, fastAndSure } from '../engine/scoring.js';
 import { respond } from '../engine/sim.js';
 import { povSwitch } from './povui.js';
@@ -15,9 +15,9 @@ import { openDrill } from './react.js';
 
 const LETTERS = ['А', 'Б', 'В', 'Г'];
 export const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-const TAG = { best: 'Лучшее решение', ok: 'Можно', bad: 'Ошибка' };
+const TAG = { best: 'Лучшее решение', ok: 'Можно', risky: 'Рискованно', bad: 'Ошибка' };
 
-export function play(keys, { module = 'decks', preview = false, onDone, timer = 0, test = false } = {}) {
+export function play(keys, { module = 'decks', preview = false, onDone, timer = 0, test = false, hset = null } = {}) {
   if (!keys.length) { toast('Пока нечего повторять — загляни завтра'); return; }
   const root = h('div.play');
   const inner = h('div.play-in');
@@ -26,6 +26,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
   document.body.style.overflow = 'hidden';
 
   const session = preview ? null : startSession(module);
+  if (session && hset != null) session.hset = hset;
   const rankBefore = summarize(state.sessions).rank.index;
   const results = [];
   const errCards = [];
@@ -65,7 +66,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
 
     const wrap = h('div.rink-wrap');
     inner.append(wrap);
-    scene = new Scene(wrap, card, { rink: state.profile.rink, anim: state.profile.anim && !timer });
+    scene = new Scene(wrap, card, { rink: state.profile.rink, hand: state.profile.hand, anim: state.profile.anim && !timer });
     window.__hkScene = scene; // для автопроверок
     zoomable(wrap);
     povSwitch(wrap, scene);
@@ -148,7 +149,15 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       await scene.play(opt.moves || []);
       // последствия: соперники и партнёры реагируют на решение (в контрольном срезе — без подсказок)
       if (!test) await scene.play(respond(card, [reveal, opt.moves || []], v), 'sim');
-      result(card, variant, opt, v, timeMs);
+      // «Почему?»: какой признак на льду делает лучшее решение лучшим (после ответа, до разбора)
+      let whyOk = null;
+      if (card.why && !test && !timer && !ended) {
+        whyOk = await askWhy(card.why);
+        const it = session && session.items[session.items.length - 1];
+        if (it && it.cardId === card.id && !ended) { it.why = whyOk; logTouch(session); }
+      }
+      if (ended) return;
+      result(card, variant, opt, v, timeMs, whyOk, rd ? readOk : null);
     };
 
     if (card.question.kind === 'choice') {
@@ -188,14 +197,34 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
     }
   }
 
-  function result(card, variant, opt, v, timeMs) {
+  function askWhy(why) {
+    return new Promise(resolve => {
+      const box = h('div.opts');
+      const wrapBox = h('div.why-box', h('div.kicker', 'Почему?'), h('div.q', why.text), box);
+      shuffle([...why.options]).forEach((o, k) => {
+        const b = h('button.opt', { 'data-k': LETTERS[k], onclick: () => {
+          box.classList.add('locked');
+          box.querySelectorAll('.opt').forEach(x => x.classList.add('dim'));
+          b.classList.remove('dim'); b.classList.add(o.correct ? 'v-best' : 'v-bad');
+          const right = why.options.find(x => x.correct);
+          wrapBox.append(h('p.read-fb.' + (o.correct ? 'yes' : 'no'), h('b', o.correct ? 'Верно.' : 'Не то.'), o.correct ? o.explain : `${right.label}. ${right.explain}`));
+          setTimeout(() => resolve(!!o.correct), 350);
+        } }, o.label);
+        box.append(b);
+      });
+      inner.append(wrapBox);
+      setTimeout(() => wrapBox.scrollIntoView({ behavior: 'smooth', block: 'end' }), 60);
+    });
+  }
+
+  function result(card, variant, opt, v, timeMs, whyOk = null, readOk = null) {
     if (test) {
       // контроль: без разбора и без правильного ответа — чтобы срез можно было повторить честно
       inner.append(h('div.result', h('p.muted', 'Ответ принят.'),
         h('button.btn.primary.block', { onclick: () => { i++; i < keys.length ? show() : finish(); } }, i + 1 < keys.length ? 'Дальше' : 'Итоги')));
       return;
     }
-    const pts = itemPoints({ verdict: v, timeMs });
+    const pts = itemPoints({ verdict: v, timeMs, why: whyOk, read: readOk });
     const pr = lib.principle[card.principle];
     const best = bestOf(card, variant);
     const next = h('button.btn.primary', { onclick: () => { i++; i < keys.length ? show() : finish(); } }, i + 1 < keys.length ? 'Дальше' : 'Итоги');
@@ -231,6 +260,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       h('div.verdict', h('span.tag.' + v, TAG[v]), preview ? null : h('span.plus', `+${pts}`)),
       h('p.explain', opt.id === 'timeout' ? 'Время вышло. На льду у тебя тоже нет лишней секунды — решай по первому взгляду.' : explainOf(card, variant, opt)),
       bestText,
+      card.best_when ? h('p.when', h('b', 'Условия: '), card.best_when) : null,
       pr ? h('div.principle', h('b', pr.name), h('span', pr.line)) : null,
       card.cue ? h('p.cue', h('b', 'Куда смотреть: '), card.cue) : null,
       card.ice ? h('p.ice', h('b', 'На льду: '), card.ice) : null,
@@ -267,7 +297,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
         h('div.q-meta', preview ? 'Предпросмотр' : 'Смена окончена'),
         h('div.big', preview ? `${n('best')}/${results.length}` : `+${gained}`),
         h('div.muted', preview ? 'лучших решений' : 'очков за смену'),
-        h('div.tri', h('div.g', h('b', n('best')), h('span', 'лучших')), h('div.o', h('b', n('ok')), h('span', 'можно')), h('div.r', h('b', n('bad')), h('span', 'ошибок'))),
+        h('div.tri', h('div.g', h('b', n('best')), h('span', 'лучших')), h('div.o', h('b', n('ok') + n('risky')), h('span', 'можно / риск')), h('div.r', h('b', n('bad')), h('span', 'ошибок'))),
         !preview && sum.rank.index > rankBefore ? h('div.rankup', `Новое звание: ${sum.rank.name}`) : null,
         !preview && sum.streak ? h('p.muted', `Серия: ${sum.streak} ${sum.streak === 1 ? 'день' : sum.streak < 5 ? 'дня' : 'дней'} подряд`) : null,
         fixKeys.length ? h('button.btn.block', { style: { marginTop: '28px' }, onclick: () => { close(); play(fixKeys, { module: 'fix', onDone }); } }, `Закрепить ошибки: ${fixKeys.length} похожих`) : null,

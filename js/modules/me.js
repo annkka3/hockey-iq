@@ -6,8 +6,9 @@ import { summarize, accuracyBy, medianTime, readRate } from '../engine/scoring.j
 import { RINKS } from '../engine/rink.js';
 import { syncStatus } from '../core/sync.js';
 import * as cards from './cards.js';
-import { holdoutCards, keysOf } from '../content.js';
+import { holdoutCards, holdoutSet, keysOf } from '../content.js';
 import { play } from './play.js';
+import * as onice from './onice.js';
 
 export function render(view, rerender, cloud) {
   const sum = summarize(state.sessions);
@@ -33,19 +34,21 @@ export function render(view, rerender, cloud) {
         h('div', { style: { fontFamily: 'var(--display)', fontWeight: 800, fontSize: '22px', color: 'var(--cyan)' } }, Math.round(rr.rate * 100) + '%')),
       meter(rr.rate), h('div.muted.small', { style: { marginTop: '6px' } }, `${rr.ok} из ${rr.n}`)));
   }
+  onice.playerPanel(view, rerender);
+
   // Контрольный срез: незнакомые ситуации без подсказок раз в 4 недели
   {
-    const tests = state.sessions.filter(s => s.module === 'test' && s.items.length >= 5);
+    const tests = state.sessions.filter(s => s.module === 'test' && s.items.length >= 4);
     const last = tests[tests.length - 1];
     const days = last ? Math.floor((Date.now() - last.startedAt) / 864e5) : null;
     const ready = !last || days >= 28;
     const pct = s => Math.round(s.items.filter(i => i.verdict === 'best').length / s.items.length * 100);
     view.append(h('div.h2', 'Контрольный срез'),
       h('div.panel',
-        h('p.muted.small', { style: { marginTop: 0 } }, `${holdoutCards().length} ситуаций, которых нет в тренировках. Без подсказок и разборов — проверка, переносится ли мышление на новые эпизоды.`),
-        tests.length ? h('div.list', tests.slice(-4).map(s => h('div.li', h('span', new Date(s.startedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })), h('span.r', pct(s) + '%')))) : null,
+        h('p.muted.small', { style: { marginTop: 0 } }, `${holdoutCards().length} ситуаций, которых нет в тренировках, в трёх наборах. Срезы идут по кругу: А, Б, В — каждый раз незнакомые эпизоды. Без подсказок и разборов — проверка, переносится ли мышление на новые ситуации.`),
+        tests.length ? h('div.list', tests.slice(-4).map(s => h('div.li', h('span', new Date(s.startedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) + (s.hset != null ? ` · набор ${'АБВ'[s.hset]}` : '')), h('span.r', pct(s) + '%')))) : null,
         h('button.btn.small' + (ready ? '.primary' : ''), { style: { marginTop: '12px' }, disabled: !ready,
-          onclick: () => play(holdoutCards().flatMap(keysOf), { module: 'test', test: true, onDone: rerender }) },
+          onclick: () => { const k = tests.length % 3; play(holdoutSet(k).flatMap(keysOf), { module: 'test', test: true, hset: k, onDone: rerender }); } },
           ready ? 'Пройти срез' : `Следующий — через ${28 - days} дн.`)));
   }
 

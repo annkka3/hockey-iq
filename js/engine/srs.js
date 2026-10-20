@@ -19,9 +19,9 @@ export function review(rec, verdict, now = Date.now()) {
   r.seen++;
   r[verdict] = (r[verdict] || 0) + 1;
   // история ответов: + лучшее, ~ можно, x ошибка (раньше best и bad оба писались «b» — поле hist больше не используется)
-  r.h2 = ((r.h2 || '') + (verdict === 'best' ? '+' : verdict === 'ok' ? '~' : 'x')).slice(-8);
+  r.h2 = ((r.h2 || '') + (verdict === 'best' ? '+' : verdict === 'bad' ? 'x' : '~')).slice(-8);
   if (verdict === 'best') r.box = Math.min(r.box + 1, INTERVALS.length - 1);
-  else if (verdict === 'ok') r.box = Math.max(r.box, 1);
+  else if (verdict === 'ok' || verdict === 'risky') r.box = Math.max(r.box, 1); // рискованное — как «можно»: держим, но не продвигаем
   else { r.box = 1; r.lapses++; }
   r.due = addDays(today(new Date(now)), INTERVALS[r.box]);
   r.last = now;

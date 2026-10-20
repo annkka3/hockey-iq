@@ -7,6 +7,7 @@ import { summarize, accuracyBy, medianTime, readRate } from '../engine/scoring.j
 import { isStuck, today, addDays } from '../engine/srs.js';
 import { play } from './play.js';
 import * as editor from './editor.js';
+import * as onice from './onice.js';
 
 let unlocked = false;
 export const lock = () => { unlocked = false; };
@@ -111,12 +112,14 @@ function dashboard(view, rerender) {
 
   if (window.HK_CONFIG.features.editor) editor.list(view, rerender);
 
-  const tests = state.sessions.filter(x => x.module === 'test' && x.items.length >= 5);
+  const tests = state.sessions.filter(x => x.module === 'test' && x.items.length >= 4);
   if (tests.length) view.append(h('div.h2', 'Контрольные срезы'),
     h('div.panel', h('p.muted.small', { style: { marginTop: 0 } }, 'Незнакомые ситуации без подсказок, раз в 4 недели. Рост здесь — признак, что мышление переносится, а не ответы запоминаются.'),
       h('div.list', tests.map(x => { const ok = x.items.filter(i => i.verdict === 'best'); const t = ok.map(i => i.timeMs).sort((a, b) => a - b);
         return h('div.li', h('span', new Date(x.startedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })),
           h('span.r', `${Math.round(ok.length / x.items.length * 100)}% · ${t.length ? (t[Math.floor(t.length / 2)] / 1000).toFixed(1) + ' с' : '—'}`)); }))));
+
+  onice.parentBlock(view, rerender);
 
   reviewBlock(view, rerender);
 

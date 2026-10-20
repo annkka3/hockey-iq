@@ -109,7 +109,7 @@ const stat = (b, s) => h('div', h('b', b), h('span', s));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 function token(layer, id, label) {
-  const g = sv('g', { class: `ent ${id === 'me' ? 'us me' : id === 'g' ? 'them goalie' : id === 'd' ? 'them' : 'us'} drag`, 'data-id': id }, layer);
+  const g = sv('g', { class: `ent legacy ${id === 'me' ? 'us me' : id === 'g' ? 'them goalie' : id === 'd' ? 'them' : 'us'} drag`, 'data-id': id }, layer);
   if (id === 'me') sv('circle', { r: 1.45, class: 'me-ring' }, g);
   if (id === 'g') sv('rect', { x: -1, y: -0.6, width: 2, height: 1.2, rx: 0.5, class: 'body' }, g);
   else sv('circle', { r: 0.95, class: 'body' }, g);
@@ -267,6 +267,7 @@ function runGame(mode, set, rerender) {
     const sc = setup(mode.id);
     let S = { ...sc.S }, G = { ...sc.G }, puck = { ...(sc.from || sc.P0 || sc.S) }, vx = 0, drag = 0;
     const hist = [];
+    let gState = sc.saveAt ? 'готов' : 'готов';
     let ready = !(sc.passAt || sc.saveAt), phase = 'aim', aim = null, charge = null, lastT = 0;
     const t0 = performance.now();
     const now = () => (performance.now() - t0) / 1000;
@@ -358,13 +359,14 @@ function runGame(mode, set, rerender) {
         if (k >= 1 && !ready) { ready = true; status(); firePending(); }
       }
       hist.push({ t, x: puck.x, y: puck.y });
-      if (sc.saveAt && t < sc.saveAt) return; // до сейва вратарь в позиции против броска от синей
+      if (sc.saveAt && t < sc.saveAt) { gState = 'готов'; return; } // до сейва вратарь в позиции против броска от синей
       const react = lvl.reaction + (sc.saveAt ? 0.05 : 0);
       let seen = hist[0];
       for (const p of hist) { if (p.t <= t - react) seen = p; else break; }
       const tgt = P.goaliePos(seen, sc.depth);
       const v = (sc.saveAt ? P.TRACK.fromDown : P.TRACK.shuffle) * lvl.move;
       const d = Math.hypot(tgt.x - G.x, tgt.y - G.y), go = Math.min(d, v * dt);
+      gState = d > 0.15 ? (sc.saveAt ? 'восстанавливается' : 'смещается') : 'готов';
       if (d > 0.001) G = { x: G.x + (tgt.x - G.x) / d * go, y: G.y + (tgt.y - G.y) / d * go };
     }
     const unset = () => { const ideal = P.goaliePos(puck, sc.depth); return Math.hypot(ideal.x - G.x, ideal.y - G.y) > 0.15; };
@@ -394,10 +396,22 @@ function runGame(mode, set, rerender) {
         ctx.beginPath(); pts.forEach((p, i) => { const q = toPx(p.u + (sh ? sh.u : 0), p.v + (sh ? sh.v : 0)); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); }); ctx.closePath();
         ctx.fillStyle = fill; ctx.fill(); ctx.strokeStyle = stroke; ctx.lineWidth = 1.5 * dpr; ctx.stroke();
       };
-      for (const p of sil) polyF(p.pts, p.id === 'pads' || p.id.startsWith('leg') ? '#F4F7FA' : p.id === 'glove' || p.id === 'blocker' ? '#FF3D57' : '#E8EEF4', '#0F2D52', opts.part && opts.part.id === p.id ? opts.part : null);
+      drawGoalie(sil, opts.part);
       for (const o of others()) for (const p of o.parts) polyF(p.pts, o.who === 'screen' ? 'rgba(15,45,82,.92)' : 'rgba(226,40,62,.85)', '#0B1C2E');
       ctx.strokeStyle = '#E2283E'; ctx.lineWidth = 5 * dpr; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(a.x, b.y); ctx.lineTo(a.x, a.y); ctx.lineTo(b.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      // состояние вратаря: готов / смещается / восстанавливается
+      if (!opts.puck) {
+        const col = gState === 'готов' ? '#FF4D6A' : '#2EE59D';
+        ctx.font = `800 ${11 * dpr}px Manrope, sans-serif`; ctx.textAlign = 'left';
+        ctx.fillStyle = 'rgba(4,8,14,.65)'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(8 * dpr, 8 * dpr, 150 * dpr, 22 * dpr, 11 * dpr) : ctx.rect(8 * dpr, 8 * dpr, 150 * dpr, 22 * dpr); ctx.fill();
+        ctx.fillStyle = col; ctx.beginPath(); ctx.arc(20 * dpr, 19 * dpr, 4 * dpr, 0, 7); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.fillText('Вратарь: ' + gState, 30 * dpr, 23 * dpr);
+      }
+      if (opts.trail) {
+        ctx.strokeStyle = 'rgba(63,215,255,.8)'; ctx.lineWidth = 2 * dpr; ctx.beginPath();
+        opts.trail.forEach((q, i) => { const pp = toPx(q.u, q.v); i ? ctx.lineTo(pp.x, pp.y) : ctx.moveTo(pp.x, pp.y); }); ctx.stroke();
+      }
       if (opts.aim && opts.finger) {
         const q = toPx(opts.aim.u, opts.aim.v);
         ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1.5 * dpr; ctx.setLineDash([3 * dpr, 3 * dpr]);
@@ -413,6 +427,65 @@ function runGame(mode, set, rerender) {
         const q = toPx(opts.puck.u, opts.puck.v), r = Math.max(4, (opts.puck.size || 1) * 0.05 * mpx);
         ctx.fillStyle = 'rgba(63,215,255,.35)'; ctx.beginPath(); ctx.arc(q.x, q.y, r * 2.2, 0, 7); ctx.fill();
         ctx.fillStyle = '#05090F'; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, 7); ctx.fill();
+      }
+    }
+
+    /* Вратарь «как настоящий»: щитки с валиками, нагрудник в цвет формы, маска с решёткой, ловушка и блин.
+       Рисуется поверх тех же прямоугольников, по которым считается физика, — что видно, то и считается. */
+    function drawGoalie(sil, partShift) {
+      const box = p => {
+        const sh = partShift && partShift.id === p.id ? partShift : null;
+        const us = p.pts.map(q => q.u + (sh ? sh.u : 0)), vs = p.pts.map(q => q.v + (sh ? sh.v : 0));
+        const a = toPx(Math.min(...us), Math.max(...vs)), b = toPx(Math.max(...us), Math.min(...vs));
+        return { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y };
+      };
+      const rr = (b, r, fill, stroke, lw = 1.5) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(b.x, b.y, Math.max(1, b.w), Math.max(1, b.h), Math.max(0, Math.min(r, b.w / 2, b.h / 2))); else ctx.rect(b.x, b.y, b.w, b.h); ctx.fillStyle = fill; ctx.fill(); if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw * dpr; ctx.stroke(); } };
+      const RED = '#D8263C', NAVY = '#0F2D52', WHITE = '#F4F7FA';
+      const order = ['stick', 'pads', 'legL', 'legR', 'body', 'head', 'blocker', 'glove'];
+      for (const id of order) for (const p of sil.filter(q => q.id === id)) {
+        const b = box(p);
+        if (id === 'pads') {
+          // бабочка: два щитка лежат на льду, внутренние края у пятки
+          const half = { ...b, w: b.w / 2 - 1 * dpr };
+          for (const bb of [half, { ...half, x: b.x + b.w / 2 + 1 * dpr }]) {
+            rr(bb, 8 * dpr, WHITE, NAVY);
+            ctx.strokeStyle = RED; ctx.lineWidth = 2 * dpr;
+            for (const k of [0.33, 0.66]) { ctx.beginPath(); ctx.moveTo(bb.x + bb.w * k, bb.y + 3 * dpr); ctx.lineTo(bb.x + bb.w * k, bb.y + bb.h - 3 * dpr); ctx.stroke(); }
+          }
+        } else if (id === 'legL' || id === 'legR') {
+          rr(b, 7 * dpr, WHITE, NAVY);
+          ctx.strokeStyle = 'rgba(15,45,82,.35)'; ctx.lineWidth = 1.5 * dpr;
+          for (const k of [0.3, 0.55, 0.8]) { ctx.beginPath(); ctx.moveTo(b.x + 3 * dpr, b.y + b.h * k); ctx.lineTo(b.x + b.w - 3 * dpr, b.y + b.h * k); ctx.stroke(); }
+          ctx.fillStyle = RED; ctx.fillRect(b.x + 2 * dpr, b.y + b.h * 0.42, b.w - 4 * dpr, 3 * dpr);
+        } else if (id === 'stick') {
+          rr(b, 3 * dpr, '#1A1D22');
+          ctx.fillStyle = '#C9A26A'; ctx.fillRect(b.x + b.w * 0.42, b.y - b.h * 1.6, b.w * 0.16, b.h * 1.6);
+        } else if (id === 'body') {
+          rr(b, 14 * dpr, RED, '#7E0E1C');
+          ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(b.x + 3 * dpr, b.y + b.h * 0.55, b.w - 6 * dpr, 4 * dpr);
+          // плечи шире нагрудника
+          rr({ x: b.x - b.w * 0.08, y: b.y, w: b.w * 1.16, h: b.h * 0.22 }, 10 * dpr, RED, '#7E0E1C');
+          ctx.font = `800 ${Math.max(10, b.w * 0.28)}px Unbounded, sans-serif`; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+          ctx.fillText('1', b.x + b.w / 2, b.y + b.h * 0.47);
+        } else if (id === 'head') {
+          const cx = b.x + b.w / 2, cy = b.y + b.h / 2, r = Math.max(b.w, b.h) * 0.62;
+          ctx.fillStyle = RED; ctx.beginPath(); ctx.arc(cx, cy - r * 0.15, r, Math.PI, 0); ctx.fill();
+          ctx.fillStyle = WHITE; ctx.strokeStyle = NAVY; ctx.lineWidth = 1.5 * dpr;
+          ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.1, r * 0.85, r * 0.95, 0, 0, 7); ctx.fill(); ctx.stroke();
+          ctx.strokeStyle = '#3B4652'; ctx.lineWidth = 1.2 * dpr;
+          for (const k of [-0.4, 0, 0.4]) { ctx.beginPath(); ctx.moveTo(cx + k * r, cy - r * 0.3); ctx.lineTo(cx + k * r, cy + r * 0.7); ctx.stroke(); }
+          for (const k of [0, 0.35]) { ctx.beginPath(); ctx.moveTo(cx - r * 0.6, cy + k * r); ctx.lineTo(cx + r * 0.6, cy + k * r); ctx.stroke(); }
+        } else if (id === 'glove') {
+          // ловушка: «корзина» с карманом
+          const cx = b.x + b.w / 2, cy = b.y + b.h / 2, r = Math.min(b.w, b.h) * 0.55;
+          ctx.fillStyle = WHITE; ctx.strokeStyle = NAVY; ctx.lineWidth = 1.5 * dpr;
+          ctx.beginPath(); ctx.ellipse(cx, cy, b.w * 0.5, b.h * 0.5, 0, 0, 7); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = 'rgba(15,45,82,.18)'; ctx.beginPath(); ctx.arc(cx, cy - r * 0.15, r * 0.55, 0, 7); ctx.fill();
+          ctx.fillStyle = RED; ctx.fillRect(b.x + b.w * 0.2, b.y + b.h - 5 * dpr, b.w * 0.6, 5 * dpr);
+        } else if (id === 'blocker') {
+          rr(b, 6 * dpr, WHITE, NAVY);
+          ctx.strokeStyle = RED; ctx.lineWidth = 3 * dpr; ctx.strokeRect(b.x + b.w * 0.18, b.y + b.h * 0.18, b.w * 0.64, b.h * 0.64);
+        }
       }
     }
 
@@ -522,6 +595,17 @@ function runGame(mode, set, rerender) {
       }, ease.linear);
       frame(sil, { aim: aimP, f, part: shift ? { id: shift.id, u: shift.du, v: shift.dv } : null, puck: { u: target.u, v: Math.max(0, target.v), size: 1 }, hit: target });
       phase = 'done';
+      // повтор: та же траектория втрое медленнее, со следом шайбы и движением той части вратаря, что встретила шайбу
+      const replay = async () => {
+        const trail = [];
+        await tween(dur * 3, kk => {
+          const pu = { u: target.u * kk, v: Math.max(0, target.v * kk), size: 2.4 - kk * 1.4 };
+          trail.push({ u: pu.u, v: pu.v });
+          const ps = shift && kk > startT ? { id: shift.id, u: shift.du * Math.min(1, (kk - startT) / (1 - startT)), v: shift.dv * Math.min(1, (kk - startT) / (1 - startT)) } : null;
+          frame(sil, { aim: aimP, f, part: ps, puck: pu, trail });
+        }, ease.linear);
+        frame(sil, { aim: aimP, f, part: shift ? { id: shift.id, u: shift.du, v: shift.dv } : null, puck: { u: target.u, v: Math.max(0, target.v), size: 1 }, hit: target, trail });
+      };
       const goal = r.result === 'goal';
       // три отдельные оценки: решение (была ли выбранная точка голевой при точном исполнении),
       // исполнение (насколько попал в прицел), исход (что случилось)
@@ -542,11 +626,13 @@ function runGame(mode, set, rerender) {
         h('span.muted', ` ${Math.round(k)} км/ч · полёт ${r.T.toFixed(2)} с`),
         h('p.aim-line', `Прицел ✕ → попадание ● : ${miss} см${drift ? ` (из них снос в движении ${Math.round(Math.abs(drift) * 100)} см)` : ''}. ${mult ? `Разброс исполнения на этой силе ±${Math.round(sdOf(k) * 200)} см.` : 'Без случайного разброса.'}`),
         h('div.shot-eval',
-          h('span', { class: decision ? 'ok' : 'no' }, h('b', 'Решение'), decision ? 'точка была голевой' : 'вратарь успевал туда'),
+          h('span', { class: decision ? 'ok' : 'no' }, h('b', 'Решение'), decision ? 'точка была голевой' : ideal.result === 'miss' || ideal.result === 'post' ? 'прицел вне створа' : ideal.result === 'blocked' ? 'в линии защитника' : 'вратарь успевал туда'),
           h('span', { class: executed ? 'ok' : 'no' }, h('b', 'Исполнение'), executed ? 'точно в прицел' : `мимо прицела на ${Math.round(execErr * 100)} см`),
           h('span', { class: goal ? 'ok' : 'no' }, h('b', 'Исход'), { goal: 'гол', save: 'сейв', post: 'штанга', miss: 'мимо', blocked: 'блок' }[r.result])),
         h('p.explain', { style: { margin: '6px 0 0' } }, explainShot(r, sc, mode, { notSet, screened })),
-        h('button.btn.primary.block', { style: { marginTop: '10px' }, onclick: round }, results.length < SHOTS ? 'Следующий бросок' : 'Итоги'));
+        h('div.row', { style: { marginTop: '10px' } },
+          h('button.btn', { onclick: replay }, 'Повтор ×⅓'),
+          h('button.btn.primary.grow', { onclick: round }, results.length < SHOTS ? 'Следующий бросок' : 'Итоги')));
       setTimeout(() => hud.scrollIntoView({ behavior: 'smooth', block: 'end' }), 50);
     }
   }

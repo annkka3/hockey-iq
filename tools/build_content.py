@@ -18,7 +18,7 @@ OUT = os.path.join(ROOT, 'data', 'content.json')
 SW = os.path.join(ROOT, 'sw.js')
 
 L, W, R = 60.0, 30.0, 8.5
-VERDICTS = {'best', 'ok', 'bad'}
+VERDICTS = {'best', 'ok', 'risky', 'bad'}  # risky — может сработать, но шанс низкий
 ROLES = {'C', 'LW', 'RW', 'LD', 'RD', 'G', 'F', 'D'}
 
 errors, warnings = [], []
@@ -148,6 +148,24 @@ def main():
                     if not re.match(r'^(plan|score|strength|clock):[a-z-]+$', v.get('key', '')): err(cid, f'плохой ключ контекста {v.get("key")}')
             elif [o.get('verdict') for o in opts].count('best') != 1:
                 err(cid, 'лучших решений не одно')
+            # ориентация корпуса и крюка: face — направление [dx, dy], stick — точка крюка на льду
+            for e in c.get('us', []) + c.get('them', []):
+                f = e.get('face')
+                if f is not None and (not isinstance(f, list) or len(f) != 2 or (f[0] == 0 and f[1] == 0)): err(cid, f'{e["id"]}: face должен быть [dx, dy]')
+                st = e.get('stick')
+                if st is not None:
+                    if not isinstance(st, list) or len(st) != 2: err(cid, f'{e["id"]}: stick должен быть [x, y]')
+                    elif math.hypot(st[0] - e['x'], st[1] - e['y']) > 2.2: err(cid, f'{e["id"]}: крюк дальше 2,2 м от игрока')
+            wy = c.get('why')
+            if wy:
+                # «Почему?» после ответа: какой признак на льду делает лучшее решение лучшим
+                if not wy.get('text'): err(cid, 'why: нет вопроса')
+                wo = wy.get('options', [])
+                if not 2 <= len(wo) <= 3: err(cid, 'why: нужно 2–3 варианта')
+                if sum(1 for o in wo if o.get('correct')) != 1: err(cid, 'why: верный вариант должен быть ровно один')
+                for o in wo:
+                    if not o.get('label') or not o.get('explain'): err(cid, 'why: вариант без текста или объяснения')
+            if c.get('best_when') is not None and not isinstance(c['best_when'], str): err(cid, 'best_when — строка')
             rd = c.get('read')
             if rd:
                 # «Смотри → Предскажи → Действуй»: вопрос на чтение, затем показ продолжения, затем решение

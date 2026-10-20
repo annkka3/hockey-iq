@@ -367,16 +367,32 @@ textarea.input { min-height: 90px; resize: vertical; }
 .rink .crease { fill: rgba(63, 160, 255, 0.28); stroke: #E2283E; stroke-width: 0.06; }
 .rink .net { fill: rgba(11, 28, 46, 0.08); stroke: #E2283E; stroke-width: 0.12; }
 
-.ent .body { stroke-width: 0.14; }
-.ent.us .body { fill: var(--navy); stroke: #fff; }
-.ent.them .body { fill: #fff; stroke: #E2283E; stroke-width: 0.26; }
-.ent.me .body { fill: #00B8F0; stroke: #fff; stroke-width: 0.18; }
-.ent .me-ring { fill: none; stroke: #00B8F0; stroke-width: 0.22; opacity: 0.95; }
-.ent .label { font-family: var(--display); font-weight: 800; font-size: 0.9px; fill: #fff; pointer-events: none; }
-.ent .label.small { font-size: 0.66px; }
-.ent.them .label { fill: #E2283E; }
-.ent.me .label { fill: #031222; }
-.ent.goalie .body { rx: 0.5; }
+/* хоккеисты сверху: свитер-плечи, шлем, перчатки, коньки, клюшка */
+.ent .body { stroke-width: 0.1; }
+.ent.us .body { fill: #123A66; stroke: #FFFFFF; }
+.ent.them .body { fill: #FFFFFF; stroke: #D8263C; stroke-width: 0.16; }
+.ent.me .body { fill: #00B8F0; stroke: #FFFFFF; stroke-width: 0.12; }
+.ent .helmet { stroke-width: 0.06; }
+.ent.us .helmet { fill: #0A1F38; stroke: #FFFFFF; }
+.ent.them .helmet { fill: #D8263C; stroke: #8E0F20; }
+.ent.me .helmet { fill: #063A55; stroke: #FFFFFF; }
+.ent .glove { fill: #1C232C; stroke: rgba(255,255,255,.5); stroke-width: 0.04; }
+.ent.them .glove { fill: #A3172A; }
+.ent .skate { fill: #2B333D; }
+.ent .stick { stroke: #3A2A1A; stroke-width: 0.1; stroke-linecap: round; }
+.ent .blade { fill: #111418; }
+.ent.goalie .pads { fill: #F3F6F9; stroke: #0F2D52; stroke-width: 0.07; }
+.ent.goalie.them .pads { stroke: #D8263C; }
+.ent.goalie .glove, .ent.goalie .blocker { fill: #F3F6F9; stroke: #0F2D52; stroke-width: 0.06; }
+.ent.goalie.them .glove, .ent.goalie.them .blocker { stroke: #D8263C; }
+.ent.goalie .mask { fill: #EAF0F5; stroke: #0F2D52; }
+.ent.goalie.them .mask { stroke: #D8263C; }
+.ent .cage { stroke: #0F2D52; stroke-width: 0.05; fill: none; }
+.ent .me-ring { fill: rgba(0,184,240,.12); stroke: #00B8F0; stroke-width: 0.16; opacity: 0.95; }
+.ent .label { font-family: var(--display); font-weight: 800; font-size: 0.78px; fill: #0F2D52; stroke: #FFFFFF; stroke-width: 0.22px; paint-order: stroke; stroke-linejoin: round; pointer-events: none; }
+.ent .label.small { font-size: 0.7px; }
+.ent.them .label { fill: #D8263C; }
+.ent.me .label { fill: #0077A8; }
 .ghost { opacity: 0.2; }
 .ghost .me-ring { display: none; }
 .trail { stroke-width: 0.12; stroke-dasharray: 0.35 0.35; stroke-linecap: round; opacity: 0.35; }
@@ -610,3 +626,20 @@ input.power::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; b
 .link-more { margin-top: 8px; }
 .link-more summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: var(--muted); list-style: none; }
 .link-more .link-row { margin-top: 8px; }
+.ent.legacy .label { fill: #fff; stroke: none; font-size: 0.9px; }
+.ent.legacy.them .label { fill: #E2283E; }
+.ent.legacy.me .label { fill: #031222; }
+.ent.legacy.them .body { fill: #fff; stroke: #E2283E; stroke-width: 0.26; }
+.ent.legacy .me-ring { fill: none; }
+.ent .trim { fill: none; stroke: rgba(255,255,255,.55); stroke-width: 0.07; }
+.ent.them .trim { stroke: rgba(216,38,60,.6); }
+.ent .visor { fill: none; stroke: rgba(200,235,255,.9); stroke-width: 0.08; stroke-linecap: round; }
+.ent .rot { filter: drop-shadow(0 0.08px 0.08px rgba(5,10,16,.35)); }
+.dots i.risky { background: #FF9F43; }
+.opt.v-risky { border-color: #FF9F43; background: rgba(255, 159, 67, 0.1); }
+.verdict .tag.risky { background: rgba(255, 159, 67, 0.14); color: #FF9F43; }
+.when { margin: 8px 0 0; font-size: 14px; color: var(--muted); }
+.when b { color: var(--ink); }
+.why-box { margin-top: 14px; padding: 12px; border-radius: 14px; border: 1px solid var(--stroke-hi); background: rgba(63,215,255,.05); animation: rise .25s ease; }
+.why-box .kicker { font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); }
+.why-box .q { font-size: 16px; margin: 6px 0 4px; }

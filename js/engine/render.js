@@ -62,6 +62,8 @@ export class Scene {
     const { y0, y1 } = viewWindow(card.view || 'full', r);
     const pad = 0.8;
     const top = r.L - y1, h = y1 - y0;
+    this.tok = Math.max(1.3, Math.min(1.9, h / 22)); // фишки крупнее реального размера — чтобы читались на телефоне; на больших видах ещё крупнее
+    this.hand = opts.hand || 'L';
     this.svg = el('svg', {
       viewBox: `${-r.W / 2 - pad} ${top - pad} ${r.W + pad * 2} ${h + pad * 2}`,
       class: 'rink-svg', role: 'img', 'aria-label': card.title || 'Ситуация на льду',
@@ -96,23 +98,103 @@ export class Scene {
       this.ents.puck = { node: g, pos: p, home: p, from: card.puck.from ? this.pt({ x: card.puck.from[0], y: card.puck.from[1] }) : null, data: card.puck };
     }
     host.appendChild(this.svg);
+    this.orientAll();
     this.placeAll(1);
   }
 
   pt(p) { return toScreen(mapPoint(p, this.rink), this.rink); }
 
+  /* Хоккеист сверху: плечи, шлем, коньки и клюшка. Корпус повёрнут туда, куда игрок смотрит (face),
+     крюк — там, где он держит клюшку (stick). Подпись — над головой, не поворачивается.
+     Размер фишки растёт на крупных видах (вся площадка), чтобы на телефоне игроки не были мелкими. */
   addEntity(e, team) {
     const p = this.pt(e);
-    const cls = ['ent', team, e.role === 'G' ? 'goalie' : '', e.me ? 'me' : ''].join(' ');
+    const goalie = e.role === 'G';
+    const cls = ['ent', team, goalie ? 'goalie' : '', e.me ? 'me' : ''].join(' ');
     const g = el('g', { class: cls }, this.lEnt);
-    if (e.me) el('circle', { r: 1.45, class: 'me-ring', filter: `url(#glow-${this.id})` }, g);
-    if (e.role === 'G') el('rect', { x: -1.0, y: -0.6, width: 2.0, height: 1.2, rx: 0.5, class: 'body' }, g);
-    else el('circle', { r: 0.95, class: 'body' }, g);
-    const t = el('text', { class: 'label', 'text-anchor': 'middle', y: 0.33 }, g);
+    const s = el('g', { class: 'tok', transform: `scale(${this.tok})` }, g);
+    if (e.me) el('circle', { r: 1.35, class: 'me-ring', filter: `url(#glow-${this.id})` }, s);
+    const rot = el('g', { class: 'rot' }, s);
+    let stick = null, blade = null;
+    if (goalie) {
+      stick = el('line', { x1: 0.15, y1: -0.45, x2: 0.35, y2: -0.85, class: 'stick' }, rot);
+      blade = el('rect', { x: -0.45, y: -0.95, width: 0.9, height: 0.16, rx: 0.06, class: 'blade' }, rot);
+      el('rect', { x: -0.95, y: -0.55, width: 1.9, height: 0.5, rx: 0.22, class: 'pads' }, rot);
+      el('ellipse', { cx: 0, cy: 0.12, rx: 0.62, ry: 0.42, class: 'body' }, rot);
+      el('circle', { cx: -0.86, cy: 0.0, r: 0.3, class: 'glove' }, rot);
+      el('rect', { x: 0.62, y: -0.22, width: 0.38, height: 0.44, rx: 0.08, class: 'blocker' }, rot);
+      el('circle', { cx: 0, cy: 0.02, r: 0.27, class: 'helmet mask' }, rot);
+      el('path', { d: 'M-0.17 -0.12 H0.17 M-0.19 0.0 H0.19', class: 'cage' }, rot);
+    } else {
+      el('rect', { x: -0.36, y: -0.32, width: 0.15, height: 0.68, rx: 0.07, class: 'skate' }, rot);
+      el('rect', { x: 0.2, y: -0.2, width: 0.15, height: 0.68, rx: 0.07, class: 'skate' }, rot);
+      stick = el('line', { x1: -0.32, y1: -0.42, x2: -0.5, y2: -1.15, class: 'stick' }, rot);
+      blade = el('rect', { x: -0.04, y: -0.08, width: 0.5, height: 0.16, rx: 0.07, class: 'blade' }, rot);
+      el('ellipse', { cx: 0, cy: 0.04, rx: 0.72, ry: 0.44, class: 'body' }, rot);
+      el('path', { d: 'M-0.62 0.08 Q0 0.36 0.62 0.08', class: 'trim' }, rot);
+      el('circle', { cx: -0.34, cy: -0.36, r: 0.15, class: 'glove' }, rot);
+      el('circle', { cx: 0.12, cy: -0.42, r: 0.15, class: 'glove' }, rot);
+      el('circle', { cx: 0, cy: -0.04, r: 0.31, class: 'helmet' }, rot);
+      el('path', { d: 'M-0.2 -0.22 Q0 -0.36 0.2 -0.22', class: 'visor' }, rot);
+    }
+    const t = el('text', { class: 'label', 'text-anchor': 'middle', y: goalie ? -1.2 : -1.05 }, s);
     t.textContent = e.me ? 'Я' : (e.label || (team === 'them' && e.role !== 'G' ? '' : LABELS[e.role] || ''));
     if (t.textContent.length > 1) t.setAttribute('class', 'label small');
     const from = e.from ? this.pt({ x: e.from[0], y: e.from[1] }) : null;
-    this.ents[e.id] = { node: g, pos: p, home: p, from, data: e, team };
+    this.ents[e.id] = { node: g, rot, stick, blade, pos: p, home: p, from, data: e, team, goalie };
+  }
+
+  /* Куда смотрит игрок (вектор в мировых координатах). */
+  facingOf(en) {
+    const e = en.data, me = mapPoint(e, this.rink);
+    if (e.face) return { x: e.face[0], y: e.face[1] };
+    const pk = this.card.puck ? mapPoint(this.card.puck, this.rink) : null;
+    if (en.goalie) {
+      const gy = me.y < this.rink.L / 2 ? 1 : -1;
+      if (pk && (pk.y - this.rink.L / 2) * gy < 0) return { x: pk.x - me.x, y: pk.y - me.y };
+      return { x: 0, y: gy };
+    }
+    if (e.from) { const f = mapPoint({ x: e.from[0], y: e.from[1] }, this.rink); if (Math.hypot(me.x - f.x, me.y - f.y) > 0.5) return { x: me.x - f.x, y: me.y - f.y }; }
+    if (pk && Math.hypot(pk.x - me.x, pk.y - me.y) < 1.3) return { x: 0, y: en.team === 'us' ? 1 : -1 };
+    if (pk) return { x: pk.x - me.x, y: pk.y - me.y };
+    return { x: 0, y: en.team === 'us' ? 1 : -1 };
+  }
+
+  /* Повернуть корпус: вектор взгляда (мир) → угол SVG. Крюк: к точке stick или на сторону хвата перед собой. */
+  orient(id, f, stickWorld = null) {
+    const en = this.ents[id];
+    if (!en || !en.rot) return;
+    const L = Math.hypot(f.x, f.y) || 1, fx = f.x / L, fy = f.y / L;
+    const a = Math.atan2(fx, fy);
+    en.angle = a; en.faceW = { x: fx, y: fy };
+    en.rot.setAttribute('transform', `rotate(${(a * 180 / Math.PI).toFixed(1)})`);
+    const lefty = en.team === 'us' && en.data.me ? (this.hand || 'L') === 'L' : true;
+    let bx = en.goalie ? 0 : (lefty ? -0.5 : 0.5), by = en.goalie ? -0.87 : -1.15;
+    if (stickWorld) {
+      const sp = this.pt({ x: stickWorld[0], y: stickWorld[1] }), dx = (sp.x - en.home.x) / this.tok, dy = (sp.y - en.home.y) / this.tok;
+      const c = Math.cos(a), s = Math.sin(a);
+      bx = dx * c + dy * s; by = -dx * s + dy * c;
+      const l = Math.hypot(bx, by), m = 1.9 / this.tok * 1.4;
+      if (l > m) { bx *= m / l; by *= m / l; }
+    }
+    if (!en.goalie) {
+      const hx = bx < 0 ? -0.32 : 0.28;
+      en.stick.setAttribute('x1', hx); en.stick.setAttribute('y1', -0.42); en.stick.setAttribute('x2', bx); en.stick.setAttribute('y2', by);
+      // крюк — «носком» наружу от корпуса, буквой Г к рукоятке
+      const sh = Math.atan2(by + 0.42, bx - hx) * 180 / Math.PI;
+      const ang = sh + (bx < 0 ? -90 : 90);
+      en.blade.setAttribute('transform', `translate(${bx.toFixed(2)} ${by.toFixed(2)}) rotate(${ang.toFixed(1)})`);
+    }
+  }
+
+  orientAll() {
+    for (const id in this.ents) {
+      const en = this.ents[id];
+      if (!en.rot) continue;
+      const f = this.facingOf(en);
+      this.orient(id, f, en.data.stick || null);
+      en.homeFace = en.faceW; en.homeStick = en.data.stick || null;
+    }
   }
 
   place(id, p) {
@@ -220,6 +302,7 @@ export class Scene {
     if (!sim) line.setAttribute('marker-end', `url(#m-${style === 'best' ? 'best' : kind}-${this.id})`);
     const puck = this.ents.puck;
     const carry = mv.carry && puck;
+    if (e.rot && kind === 'skate' && len > 0.8) this.orient(mv.who, { x: b.x - a.x, y: -(b.y - a.y) }); // корпус по ходу движения
     const dur = !this.animOn ? 0 : kind === 'skate' ? Math.max(500, len * 90) : kind === 'shot' ? 380 : Math.max(320, len * 35);
     if (kind === 'skate') {
       const L = Math.hypot(ex - a.x, ey - a.y);
@@ -239,13 +322,13 @@ export class Scene {
   /* Закрепить текущую расстановку как новый стоп-кадр (после показа продолжения в «Предскажи»). */
   commit() {
     this.clearArrows();
-    for (const id in this.ents) this.ents[id].home = { ...this.ents[id].pos };
+    for (const id in this.ents) { const en = this.ents[id]; en.home = { ...en.pos }; if (en.rot) { en.homeFace = en.faceW; en.homeStick = null; } }
   }
 
   /* Вернуть стоп-кадр (перед показом лучшего варианта). */
   reset() {
     this.clearArrows();
-    for (const id in this.ents) this.place(id, this.ents[id].home);
+    for (const id in this.ents) { const en = this.ents[id]; this.place(id, en.home); if (en.rot && en.homeFace) this.orient(id, en.homeFace, en.homeStick); }
   }
 
   destroy() { if (this.onDestroy) this.onDestroy(); this.offTap(); this.svg.remove(); }

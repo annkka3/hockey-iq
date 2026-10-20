@@ -86,6 +86,12 @@ export function startSession(module) {
   return s;
 }
 
+/* Дописали поле в последний ответ (например, «Почему?») — сохранить и отметить к синхронизации. */
+export function logTouch(s) {
+  dirty.sessions.add(s.id);
+  save();
+}
+
 export function logItem(s, item) {
   s.items.push(item);
   s.durationSec = Math.round((Date.now() - s.startedAt) / 1000);

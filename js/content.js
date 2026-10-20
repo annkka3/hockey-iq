@@ -24,7 +24,12 @@ export async function loadContent() {
    Выбор детерминированный (по id), поэтому одинаков на всех устройствах. */
 const hash = s => { let x = 2166136261; for (const ch of s) { x ^= ch.charCodeAt(0); x = Math.imul(x, 16777619); } return x >>> 0; };
 function markHoldout() {
-  for (const c of lib.cards) if (c.pack === 'core' && !c.variants && c.question.kind === 'choice' && hash(c.id) % 6 === 0) c.holdout = true;
+  // три независимых контрольных набора (A, B, C) — срезы идут по кругу, поэтому ни один набор не успевает примелькаться
+  for (const c of lib.cards) {
+    if (c.pack !== 'core' || c.variants) continue;
+    const k = hash(c.id) % 12; // ~четверть встроенных ситуаций, по 10–12 в наборе
+    if (k < 3) { c.holdout = true; c.hset = k; }
+  }
 }
 /* Редакторский статус: ситуации, которые родитель или тренер отметил «Не так» / «У нас иначе», не выдаются в тренировки,
    пока их не исправят (отметку можно снять). Контрольные — тоже не в тренировках. */
@@ -33,6 +38,7 @@ export function setExcluded(reviews = {}) { lib.excluded = new Set(Object.keys(r
 export const inTraining = c => !c.holdout && !lib.excluded.has(c.id);
 export const trainCards = () => lib.cards.filter(inTraining);
 export const holdoutCards = () => lib.cards.filter(c => c.holdout);
+export const holdoutSet = k => lib.cards.filter(c => c.holdout && c.hset === k % 3);
 
 export function addPack(cards, pack) {
   for (const c of cards) {

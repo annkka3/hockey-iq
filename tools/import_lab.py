@@ -116,6 +116,10 @@ def main():
         # численность: заметки могут убрать игроков (например, сделать настоящее меньшинство 4 × 5)
         us = [e for e in us if e['id'] not in n.get('remove_us', [])]
         them = [e for e in them if e['id'] not in n.get('remove_them', [])]
+        # ориентация корпуса и крюка из заметок
+        for e in us + them:
+            for k, v in n.get('ents', {}).get(e['id'], {}).items():
+                if k in ('face', 'stick'): e[k] = v
         me = next(e for e in us if e.get('me'))
         puck = pt(s['puck'])
         has_puck = math.hypot(puck[0] - me['x'], puck[1] - me['y']) < 2.2
@@ -143,6 +147,8 @@ def main():
             'us': us, 'them': them, 'puck': {'x': puck[0], 'y': puck[1]},
             'options': options, 'cue': s.get('cue'), 'ice': s.get('ice'),
             **({'read': n['read']} if n.get('read') else {}),
+            **({'why': n['why']} if n.get('why') else {}),
+            **({'best_when': n['best_when']} if n.get('best_when') else {}),
             'source': {'basis': 'HOCKEY IQ LAB 4.0 — ' + topic}, 'status': 'draft', 'origin': 'lab',
         }
         cards.append(card)
