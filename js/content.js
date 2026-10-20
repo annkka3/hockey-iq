@@ -12,6 +12,7 @@ export async function loadContent() {
   lib.built = data.built;
   lib.plays = data.plays || [];
   lib.scans = data.scans || [];
+  lib.program = data.program || null;
   for (const p of data.principles) lib.principle[p.id] = p;
   for (const p of data.phases) lib.phase[p.id] = p;
   addPack(data.cards, 'core');

@@ -139,7 +139,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       if (!preview) {
         if (!test) answer(keys[i], v); // контрольный срез не меняет интервалы повторения
         logItem(session, { cardId: card.id, key: keys[i], variant: variant ? variant.key : null, deck: card.deck, phase: card.phase,
-                           principle: card.principle, answer: opt.id, verdict: v, timeMs,
+                           principle: card.principle, track: card.track || null, answer: opt.id, verdict: v, timeMs,
                            ...(rd ? { read: readOk, readMs } : {}), ...extra });
       }
       if (card.question.kind === 'tap') scene.showZones(card.options, opt.id, o => verdictOf(card, variant, o));

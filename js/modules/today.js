@@ -6,6 +6,7 @@ import { summarize } from '../engine/scoring.js';
 import { buildQueue, today } from '../engine/srs.js';
 import { play } from './play.js';
 import * as cards from './cards.js';
+import { programQueue } from './program.js';
 
 const cfg = () => (window.HK_CONFIG && window.HK_CONFIG.session) || { size: 10, maxNew: 5 };
 
@@ -16,7 +17,7 @@ export function render(view, rerender) {
   const size = cfg().size;
   const done = sum.todayItems;
   const nick = state.profile.nick;
-  const start = () => play(buildQueue(allKeys(), state.progress, cfg()), { module: 'today', onDone: rerender });
+  const start = () => play(programQueue(cfg()), { module: 'today', onDone: rerender });
 
   view.append(
     h('div.h1', nick ? `На лёд, ${nick}` : 'На лёд'),

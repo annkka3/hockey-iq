@@ -526,7 +526,7 @@ input[type=range] { width: 100%; accent-color: var(--cyan); height: 28px; }
 .next-card .pcard .pc-img { padding: 6px 4px 0; }
 
 /* ---------- Каталог, фокус, полный экран ---------- */
-.cat-tabs { margin: 4px 0 16px; --n: 4; }
+.cat-tabs { margin: 4px 0 16px; }
 .focus { margin: 6px 0 14px; padding: 14px; }
 .focus .kicker { font-family: var(--display); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--gold); margin-bottom: 10px; }
 .focus-row { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -592,3 +592,12 @@ input.power::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; b
 .link-chip { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--stroke); background: var(--panel); color: var(--ink); cursor: pointer; text-align: left; font-family: var(--body); }
 .link-chip b { font-size: 13px; } .link-chip span { font-size: 12px; color: var(--muted); line-height: 1.25; }
 .link-chip[disabled] { opacity: .7; }
+
+/* ---------- Программа U15 ---------- */
+.prog-head { margin-bottom: 12px; }
+.prog-head .kicker { font-family: var(--display); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--cyan); }
+.prog-track { margin-bottom: 10px; cursor: pointer; }
+.prog-track .nm { font-weight: 800; } .prog-track .ln { font-size: 13px; color: var(--muted); margin: 2px 0 8px; }
+.prog-pc { font-family: var(--display); font-weight: 800; font-size: 20px; color: var(--cyan); }
+.prog-meta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--muted); font-weight: 700; }
+.prog-meta .off { color: var(--gold); }

@@ -7,10 +7,11 @@ import { buildQueue, isLearned } from '../engine/srs.js';
 import { accuracyBy } from '../engine/scoring.js';
 import { play } from './play.js';
 import * as film from './film.js';
+import * as program from './program.js';
 
 const DECK_ICON = { 'no-puck': 'noPuck', 'with-puck': 'puck', faceoff: 'faceoff', special: 'shield', mine: 'stick' };
-const TABS = [['decks', 'Колоды'], ['missions', 'Миссии'], ['films', 'Разборы'], ['principles', 'Принципы']];
-let tab = 'decks';
+const TABS = [['program', 'U15'], ['decks', 'Колоды'], ['missions', 'Миссии'], ['films', 'Разборы'], ['principles', 'Принципы']];
+let tab = 'program';
 
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const keysFor = cards => cards.filter(c => !c.holdout).flatMap(keysOf);
@@ -23,7 +24,8 @@ export function render(view, rerender) {
     TABS.map(([id, label]) => h('button', { class: tab === id ? 'on' : '', onclick: () => { tab = id; rerender(); } }, label)));
   view.append(seg);
 
-  if (tab === 'decks') decks(view, rerender);
+  if (tab === 'program') program.render(view, rerender);
+  else if (tab === 'decks') decks(view, rerender);
   else if (tab === 'missions') film.grid(view, rerender, { mission: true, lead: 'Три решения подряд: каждый выбор ведёт ситуацию в свою сторону.' });
   else if (tab === 'films') {
     film.grid(view, rerender, { kind: 'film', title: 'Разборы розыгрышей', lead: 'Розыгрыш по шагам: стоп — «что дальше?» — продолжение.' });
