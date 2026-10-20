@@ -527,6 +527,7 @@ input[type=range] { width: 100%; accent-color: var(--cyan); height: 28px; }
 
 /* ---------- Каталог, фокус, полный экран ---------- */
 .cat-tabs { margin: 4px 0 16px; }
+.cat-tabs button { font-size: 12.5px; padding-left: 2px; padding-right: 2px; letter-spacing: -0.01em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .focus { margin: 6px 0 14px; padding: 14px; }
 .focus .kicker { font-family: var(--display); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--gold); margin-bottom: 10px; }
 .focus-row { display: flex; gap: 8px; flex-wrap: wrap; }

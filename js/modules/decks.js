@@ -10,7 +10,7 @@ import * as film from './film.js';
 import * as program from './program.js';
 
 const DECK_ICON = { 'no-puck': 'noPuck', 'with-puck': 'puck', faceoff: 'faceoff', special: 'shield', mine: 'stick' };
-const TABS = [['program', 'U15'], ['decks', 'Колоды'], ['missions', 'Миссии'], ['films', 'Разборы'], ['principles', 'Принципы']];
+const TABS = [['program', 'U15'], ['decks', 'Колоды'], ['missions', 'Миссии'], ['films', 'Разборы'], ['principles', 'Темы']];
 let tab = 'program';
 
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
