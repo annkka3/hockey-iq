@@ -624,22 +624,30 @@ function runGame(mode, set, rerender) {
         ctx.fillStyle = 'rgba(20,40,70,.25)'; ctx.beginPath(); ctx.ellipse(x, footY, 150 * sc, 24 * sc, 0, 0, 7); ctx.fill();
         // древко — прямая через обе руки картинки до льда; у защитника лёд ближе к нам (ниже ног), у заслона — дальше (выше)
         const toS = ([gx, gy]) => ({ x: x + (gs.mirror ? M.ax - gx : gx - M.ax) * sc, y: footY + (gy - M.ay) * sc });
-        const t0 = toS(gs.top), b0 = toS(gs.bottom), iceY = footY + (def ? 40 : -30) * sc;
+        const t0 = toS(gs.top), b0 = toS(gs.bottom), iceY = footY + (def ? 22 : -30) * sc;
         const k = (iceY - b0.y) / ((b0.y - t0.y) || 1), heel = { x: b0.x + (b0.x - t0.x) * k, y: iceY };
         const side = (heel.x >= x ? 1 : -1), toe = { x: heel.x + side * 0.3 * 560 / 1.65 * sc, y: iceY + (def ? 2 : -1) * sc * 4 };
-        const stick = () => {
+        // толщина по реальным размерам: древко ~3 см, крюк ~7 см (в масштабе этой фигуры: 560 единиц = 1,65 м)
+        const m2px = 560 / 1.65 * sc, wShaft = Math.max(3, 0.034 * m2px * 1.4), wBlade = Math.max(4, 0.075 * m2px);
+        const seg = (a, b, w, col) => { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); };
+        const upper = () => { // от торца до нижней руки — за перчатками и корпусом
           ctx.save(); ctx.lineCap = 'round';
-          ctx.strokeStyle = '#1B1E23'; ctx.lineWidth = Math.max(2, 9 * sc);
-          ctx.beginPath(); ctx.moveTo(t0.x - (b0.x - t0.x) * 0.15, t0.y - (b0.y - t0.y) * 0.15); ctx.lineTo(heel.x, heel.y); ctx.stroke();
-          ctx.lineWidth = Math.max(3, 15 * sc); ctx.beginPath(); ctx.moveTo(heel.x, heel.y); ctx.lineTo(toe.x, toe.y); ctx.stroke();
-          ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = Math.max(1, 5 * sc);
-          ctx.beginPath(); ctx.moveTo(heel.x + (toe.x - heel.x) * 0.2, heel.y + (toe.y - heel.y) * 0.2); ctx.lineTo(heel.x + (toe.x - heel.x) * 0.85, heel.y + (toe.y - heel.y) * 0.85); ctx.stroke();
+          seg({ x: t0.x - (b0.x - t0.x) * 0.15, y: t0.y - (b0.y - t0.y) * 0.15 }, b0, wShaft, '#1B1E23'); ctx.restore();
+        };
+        const lower = () => { // от нижней руки до льда и крюк — перед ногами; начинается из-под краги
+          ctx.save(); ctx.lineCap = 'round';
+          const from = { x: b0.x + (heel.x - b0.x) * 0.08, y: b0.y + (heel.y - b0.y) * 0.08 };
+          seg(from, heel, wShaft, '#1B1E23');
+          seg({ x: from.x - wShaft * 0.25, y: from.y }, { x: heel.x - wShaft * 0.25, y: heel.y }, Math.max(1, wShaft * 0.3), 'rgba(255,255,255,.18)');
+          seg(heel, toe, wBlade, '#1B1E23');
+          seg({ x: heel.x + (toe.x - heel.x) * 0.2, y: heel.y + (toe.y - heel.y) * 0.2 }, { x: heel.x + (toe.x - heel.x) * 0.85, y: heel.y + (toe.y - heel.y) * 0.85 }, Math.max(1.5, wBlade * 0.45), 'rgba(255,255,255,.9)');
           ctx.restore();
         };
-        if (!def) stick(); // у заслона клюшка за ним (дальше от нас) — сначала клюшка, потом игрок
+        if (!def) { upper(); lower(); } // у заслона вся клюшка за ним (дальше от нас)
+        else upper();
         ctx.save(); if (gs.mirror) { ctx.translate(x, 0); ctx.scale(-1, 1); ctx.translate(-x, 0); }
         ctx.drawImage(img, x - M.ax * sc, footY - M.ay * sc, M.w * sc, M.h * sc); ctx.restore();
-        if (def) stick();
+        if (def) lower();
       }
       // состояние вратаря
       if (!opts.puck) {
