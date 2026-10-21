@@ -132,36 +132,92 @@ function dashboard(view, rerender) {
   unlocked = true;
 }
 
-/* Ревью карточек: «так / не так / у нас по-другому» + комментарий. Отзывы копируются одним текстом и отдаются автору. */
+/* Ревью карточек (методическая проверка): родитель или тренер смотрит ситуацию и отмечает
+   «Проверено», «Исправить» или «У нас иначе» с комментарием. «Исправить» и «У нас иначе» сразу убирают ситуацию
+   из тренировок на этом устройстве. Отзывы выгружаются JSON-файлом для автора: tools/apply_reviews.py переносит
+   их в исходники (status: reviewed / needs-fix и комментарий), и после сборки статус действует у всех.
+   Статус из исходников показан у каждой ситуации: черновик, проверено, на исправлении. */
+const SRC_STATUS = { draft: 'черновик', reviewed: 'проверено', 'needs-fix': 'на исправлении' };
+let reviewFilter = 'todo';
 function reviewBlock(view, rerender) {
   const rev = state.parent.reviews || {};
   const save = (id, patch) => { setParent({ reviews: { ...(state.parent.reviews || {}), [id]: { ...(state.parent.reviews || {})[id], ...patch, at: Date.now() } } }); };
-  const done = lib.cards.filter(c => rev[c.id] && rev[c.id].v).length;
+  const cards = lib.cards.filter(c => c.pack === 'core');
+  const marked = c => rev[c.id] && rev[c.id].v;
+  const counts = {
+    all: cards.length,
+    todo: cards.filter(c => !marked(c) && c.status !== 'reviewed').length,
+    fix: cards.filter(c => (rev[c.id] && (rev[c.id].v === 'no' || rev[c.id].v === 'other')) || c.status === 'needs-fix').length,
+    ok: cards.filter(c => (rev[c.id] && rev[c.id].v === 'ok') || c.status === 'reviewed').length,
+  };
+  const pass = c => reviewFilter === 'all' ? true
+    : reviewFilter === 'todo' ? !marked(c) && c.status !== 'reviewed'
+    : reviewFilter === 'fix' ? (rev[c.id] && (rev[c.id].v === 'no' || rev[c.id].v === 'other')) || c.status === 'needs-fix'
+    : (rev[c.id] && rev[c.id].v === 'ok') || c.status === 'reviewed';
   const box = h('div.list');
-  for (const c of lib.cards) {
-    const r = rev[c.id] || {};
-    const tg = h('div.toggle', { style: { '--n': 3 } });
-    for (const [v, t] of [['ok', 'Проверено'], ['no', 'Не так'], ['other', 'У нас иначе']]) {
-      tg.append(h('button', { type: 'button', class: r.v === v ? 'on' : '', onclick: e => { const off = (state.parent.reviews || {})[c.id]?.v === v; save(c.id, { v: off ? null : v }); tg.querySelectorAll('button').forEach(b => b.classList.remove('on')); if (!off) e.currentTarget.classList.add('on'); } }, t));
+  const fill = () => {
+    box.innerHTML = '';
+    const list = cards.filter(pass);
+    if (!list.length) box.append(h('p.muted.small', 'Здесь пусто.'));
+    for (const c of list.slice(0, 60)) {
+      const r = rev[c.id] || {};
+      const tg = h('div.toggle', { style: { '--n': 3 } });
+      for (const [v, t] of [['ok', 'Проверено'], ['no', 'Исправить'], ['other', 'У нас иначе']]) {
+        tg.append(h('button', { type: 'button', class: r.v === v ? 'on' : '', onclick: e => { const off = (state.parent.reviews || {})[c.id]?.v === v; save(c.id, { v: off ? null : v }); tg.querySelectorAll('button').forEach(b => b.classList.remove('on')); if (!off) e.currentTarget.classList.add('on'); } }, t));
+      }
+      const note = h('input.input', { placeholder: 'Что не так или как у вас играют', value: r.note || '', onchange: e => save(c.id, { note: e.target.value.trim() }) });
+      const st = c.status || 'draft';
+      box.append(h('div.review-row',
+        h('div.row', h('div.grow', h('div.t', c.title),
+          h('div.muted.small', `${c.id} · ${(lib.phase[c.phase] || {}).name || ''} · ${(lib.principle[c.principle] || {}).name || ''} · `,
+            h('span', { style: { color: st === 'reviewed' ? 'var(--good)' : st === 'needs-fix' ? 'var(--bad)' : 'var(--muted)', fontWeight: 700 } }, SRC_STATUS[st] || st))),
+          h('button.btn.small', { onclick: () => play(keysOf(c), { preview: true }) }, 'Смотреть')),
+        tg, note));
     }
-    const note = h('input.input', { placeholder: 'Комментарий', value: r.note || '', onchange: e => save(c.id, { note: e.target.value.trim() }) });
-    box.append(h('div.review-row',
-      h('div.row', h('div.grow', h('div.t', c.title), h('div.muted.small', `${(lib.phase[c.phase] || {}).name} · ${(lib.principle[c.principle] || {}).name}`)),
-        h('button.btn.small', { onclick: () => play(keysOf(c), { preview: true }) }, 'Смотреть')),
-      tg, note));
+    if (list.length > 60) box.append(h('p.muted.small', `Показаны первые 60 из ${list.length}. Отметьте их — список обновится.`));
+  };
+  const chips = h('div.toggle', { style: { '--n': 4, marginBottom: '10px' } });
+  for (const [k, t] of [['todo', `Не проверены · ${counts.todo}`], ['fix', `Исправить · ${counts.fix}`], ['ok', `Проверено · ${counts.ok}`], ['all', `Все · ${counts.all}`]]) {
+    chips.append(h('button', { type: 'button', class: reviewFilter === k ? 'on' : '', onclick: e => { reviewFilter = k; chips.querySelectorAll('button').forEach(b => b.classList.remove('on')); e.currentTarget.classList.add('on'); fill(); } }, t));
   }
-  view.append(h('div.h2', `Ревью карточек · ${done}/${lib.cards.length}`),
+  fill();
+  const done = cards.filter(c => marked(c) || c.status === 'reviewed').length;
+  view.append(h('div.h2', `Проверка ситуаций · ${done}/${cards.length}`),
     h('div.panel',
-      h('p.muted.small', { style: { marginTop: 0 } }, 'Посмотрите ситуацию и отметьте, верно ли решение для его команды. «Не так» и «У нас иначе» сразу убирают ситуацию из тренировок, пока её не исправят; повторное нажатие снимает отметку. Ответы в предпросмотре не идут в статистику.'),
-      h('details', h('summary.btn.small', { style: { listStyle: 'none' } }, 'Открыть список'), h('div', { style: { marginTop: '12px' } }, box)),
-      h('button.btn.primary.small', { style: { marginTop: '12px' }, onclick: () => copyReviews() }, 'Скопировать отзывы')));
+      h('p.muted.small', { style: { marginTop: 0 } }, 'Посмотрите ситуацию и отметьте, верно ли решение для его команды. «Исправить» и «У нас иначе» сразу убирают ситуацию из тренировок, пока её не исправят; повторное нажатие снимает отметку. Ответы в предпросмотре не идут в статистику. Готовые отзывы отправьте автору файлом — он перенесёт статусы в приложение для всех.'),
+      h('details', h('summary.btn.small', { style: { listStyle: 'none' } }, 'Открыть список'), h('div', { style: { marginTop: '12px' } }, chips, box)),
+      h('div.row', { style: { marginTop: '12px', gap: '8px', flexWrap: 'wrap' } },
+        h('button.btn.primary.small', { onclick: () => exportReviews() }, 'Скачать отзывы (JSON)'),
+        h('button.btn.small', { onclick: () => copyReviews() }, 'Скопировать текстом'))));
+}
+
+/* Отзывы для автора: { "<id>": { "status": "reviewed" | "needs-fix", "verdict": "ok" | "no" | "other", "note": "…", "title": "…" } }.
+   tools/apply_reviews.py читает этот файл и проставляет статус в исходниках. */
+function reviewsJson() {
+  const rev = state.parent.reviews || {};
+  const out = {};
+  for (const c of lib.cards) {
+    const r = rev[c.id];
+    if (!r || (!r.v && !r.note)) continue;
+    out[c.twin || c.id] = { status: r.v === 'ok' ? 'reviewed' : r.v ? 'needs-fix' : 'draft', verdict: r.v || null, note: r.note || '', title: c.title, at: r.at || null };
+  }
+  return out;
+}
+function exportReviews() {
+  const data = reviewsJson();
+  const n = Object.keys(data).length;
+  if (!n) { toast('Пока нет отметок'); return; }
+  const blob = new Blob([JSON.stringify({ app: 'hockey-iq', kind: 'reviews', built: lib.built, reviews: data }, null, 1)], { type: 'application/json' });
+  const a = h('a', { href: URL.createObjectURL(blob), download: `hockey-iq-reviews-${today()}.json` });
+  document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  toast(`Отзывов: ${n} — файл сохранён`);
 }
 
 function copyReviews() {
   const rev = state.parent.reviews || {};
   const lines = lib.cards.filter(c => rev[c.id] && (rev[c.id].v || rev[c.id].note))
-    .map(c => `${c.id} «${c.title}»: ${{ ok: 'так', no: 'не так', other: 'у нас иначе' }[rev[c.id].v] || '—'}${rev[c.id].note ? ' — ' + rev[c.id].note : ''}`);
-  const text = `Ревью карточек Hockey IQ (${lines.length}):\n` + lines.join('\n');
+    .map(c => `${c.id} «${c.title}»: ${{ ok: 'проверено', no: 'исправить', other: 'у нас иначе' }[rev[c.id].v] || '—'}${rev[c.id].note ? ' — ' + rev[c.id].note : ''}`);
+  const text = `Ревью карточек Hockey IQ (${lines.length}):\n` + lines.join('\n') + '\n\nJSON:\n' + JSON.stringify(reviewsJson());
   (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => toast('Скопировано — вставьте в чат'), () => {
     const ta = h('textarea.input', { style: { height: '200px' } }); ta.value = text;
     document.body.append(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('Скопировано');

@@ -119,7 +119,7 @@ def main():
         # ориентация корпуса и крюка из заметок
         for e in us + them:
             for k, v in n.get('ents', {}).get(e['id'], {}).items():
-                if k in ('face', 'stick', 'hand'): e[k] = v
+                if k in ('face', 'stick', 'hand', 'from', 'action'): e[k] = v
         me = next(e for e in us if e.get('me'))
         puck = pt(s['puck'])
         has_puck = math.hypot(puck[0] - me['x'], puck[1] - me['y']) < 2.2
@@ -144,12 +144,14 @@ def main():
             'title': s['title'], 'view': window(ys),
             'story': n.get('story', s['story']),
             'question': {'kind': 'choice', 'text': n.get('question', s['question'])},
-            'us': us, 'them': them, 'puck': {'x': puck[0], 'y': puck[1]},
+            'us': us, 'them': them, 'puck': {'x': puck[0], 'y': puck[1], **({'from': n['puck_from']} if n.get('puck_from') else {})},
             'options': options, 'cue': s.get('cue'), 'ice': s.get('ice'),
             **({'read': n['read']} if n.get('read') else {}),
             **({'why': n['why']} if n.get('why') else {}),
             **({'best_when': n['best_when']} if n.get('best_when') else {}),
-            'source': {'basis': 'HOCKEY IQ LAB 4.0 — ' + topic}, 'status': 'draft', 'origin': 'lab',
+            'source': {'basis': 'HOCKEY IQ LAB 4.0 — ' + topic}, 'status': n.get('status', 'draft'), 'origin': 'lab',
+            **({'variants': n['variants']} if n.get('variants') else {}),
+            **({'review': n['review']} if n.get('review') else {}),
         }
         cards.append(card)
     json.dump(cards, open(OUT_CARDS, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)

@@ -2,6 +2,8 @@
    Встроенный пакет core лежит в data/content.json; пакеты команды и «мои моменты» потом
    добавляются в тот же список через addPack — движок не различает их по происхождению. */
 
+import { state } from './core/state.js';
+
 export const lib = { plays: [], cards: [], byId: {}, decks: [], phases: [], principles: [], principle: {}, phase: {}, built: '' };
 
 export async function loadContent() {
@@ -15,7 +17,9 @@ export async function loadContent() {
   lib.program = data.program || null;
   for (const p of data.principles) lib.principle[p.id] = p;
   for (const p of data.phases) lib.phase[p.id] = p;
-  addPack(data.cards, 'core');
+  // ситуации, зависящие от хвата «Я», приходят в двух версиях (me_hand L / R): берём ту, что совпадает с профилем
+  const hand = (state.profile && state.profile.hand) || 'L';
+  addPack(data.cards.filter(c => !c.me_hand || c.me_hand === hand), 'core');
   markHoldout();
 }
 
@@ -27,7 +31,7 @@ function markHoldout() {
   // три независимых контрольных набора (A, B, C) — срезы идут по кругу, поэтому ни один набор не успевает примелькаться
   for (const c of lib.cards) {
     if (c.pack !== 'core' || c.variants) continue;
-    const k = hash(c.id) % 12; // ~четверть встроенных ситуаций, по 10–12 в наборе
+    const k = hash(c.twin || c.id) % 12; // ~четверть встроенных ситуаций, по 10–12 в наборе; у зеркальной версии — тот же набор
     if (k < 3) { c.holdout = true; c.hset = k; }
   }
 }
@@ -35,7 +39,9 @@ function markHoldout() {
    пока их не исправят (отметку можно снять). Контрольные — тоже не в тренировках. */
 lib.excluded = new Set();
 export function setExcluded(reviews = {}) { lib.excluded = new Set(Object.keys(reviews).filter(id => reviews[id] && (reviews[id].v === 'no' || reviews[id].v === 'other'))); }
-export const inTraining = c => !c.holdout && !lib.excluded.has(c.id);
+// статус needs-fix в исходниках — ситуация ждёт исправления; версия под другой хват (после смены хвата в профиле) — тоже не выдаётся
+export const inTraining = c => !c.holdout && !lib.excluded.has(c.id) && c.status !== 'needs-fix'
+  && (!c.me_hand || c.me_hand === ((state.profile && state.profile.hand) || 'L'));
 export const trainCards = () => lib.cards.filter(inTraining);
 export const holdoutCards = () => lib.cards.filter(c => c.holdout);
 export const holdoutSet = k => lib.cards.filter(c => c.holdout && c.hset === k % 3);
