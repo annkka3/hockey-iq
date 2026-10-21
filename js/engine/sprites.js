@@ -47,6 +47,7 @@ export const GRIPS = {
   'stride-gL': { top: [275, 245], bottom: [82, 375] },
   'stride-gR': { top: [268, 255], bottom: [72, 375] },
   'q3back-gL': { top: [400, 245], bottom: [150, 345] },
+  'q3back-gR': { top: [185, 305], bottom: [265, 355] },   // нижняя рука закрыта корпусом — точка на линии к правому коньку
 };
 /* Какая картинка нужна игроку с хватом hand в ракурсе view, смотрящему влево (faceLeft) или вправо. */
 export function gripSprite(team, view, hand, faceLeft) {
@@ -55,7 +56,7 @@ export function gripSprite(team, view, hand, faceLeft) {
   if (view === 'front' || view === 'back') { key = view + '-gL'; mirror = hand === 'R'; }
   else if (faceLeft) { key = view + '-g' + hand; mirror = false; }
   else { key = view + '-g' + other; mirror = true; }
-  if (!GRIPS[key]) { key = 'back-gL'; mirror = hand === 'R'; } // вид три четверти со спины, правый хват влево — пока нет картинки
+  if (!GRIPS[key]) { key = 'back-gL'; mirror = hand === 'R'; }
   return { img: load(`skater-${t}-${key}`), mirror, ...GRIPS[key] };
 }
 
