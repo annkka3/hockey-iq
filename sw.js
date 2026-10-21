@@ -2,7 +2,7 @@
    Страница, скрипты, стили и контент — сначала сеть (обновления приходят сразу), без сети — из кэша.
    Шрифты, иконки, библиотеки — сначала кэш. Трафик Firebase не трогаем.
    Префикс кэша свой (hk-): на домене annkka3.github.io живут и другие приложения, их кэши не задеваем. */
-const VERSION = 'v20';
+const VERSION = 'v21';
 const PREFIX = 'hk-shell-';
 const CACHE = PREFIX + VERSION;
 const CORE = [
@@ -13,7 +13,7 @@ const CORE = [
   'js/modules/today.js', 'js/modules/decks.js', 'js/modules/play.js', 'js/modules/me.js', 'js/modules/parent.js', 'js/modules/soon.js', 'js/modules/shot.js', 'js/modules/react.js', 'js/modules/editor.js', 'js/modules/film.js', 'js/modules/cards.js', 'js/modules/links.js', 'js/modules/povui.js', 'js/modules/program.js', 'js/modules/onice.js',
   'data/content.json', 'fonts/Unbounded.woff2', 'fonts/Manrope.woff2',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
-  'img/sprites/arena-back.webp', 'img/sprites/g-blocker.webp', 'img/sprites/g-body.webp', 'img/sprites/g-glove.webp', 'img/sprites/g-head.webp', 'img/sprites/g-pad.webp', 'img/sprites/g-pads.webp', 'img/sprites/g-stick.webp', 'img/sprites/goalie-them-back.webp', 'img/sprites/goalie-them-front.webp', 'img/sprites/goalie-us-back.webp', 'img/sprites/goalie-us-front.webp', 'img/sprites/own-stick-left.webp', 'img/sprites/own-stick-right.webp', 'img/sprites/skater-them-back.webp', 'img/sprites/skater-them-front.webp', 'img/sprites/skater-them-side.webp', 'img/sprites/skater-us-back.webp', 'img/sprites/skater-us-front.webp', 'img/sprites/skater-us-side.webp',
+  'img/sprites/arena-back.webp', 'img/sprites/g-blocker.webp', 'img/sprites/g-body.webp', 'img/sprites/g-glove.webp', 'img/sprites/g-head.webp', 'img/sprites/g-pad.webp', 'img/sprites/g-pads.webp', 'img/sprites/g-stick.webp', 'img/sprites/goalie-them-back.webp', 'img/sprites/goalie-them-butterfly.webp', 'img/sprites/goalie-them-front.webp', 'img/sprites/goalie-us-back.webp', 'img/sprites/goalie-us-front.webp', 'img/sprites/own-stick-left.webp', 'img/sprites/own-stick-right.webp', 'img/sprites/skater-them-back.webp', 'img/sprites/skater-them-front.webp', 'img/sprites/skater-them-side.webp', 'img/sprites/skater-us-back.webp', 'img/sprites/skater-us-front.webp', 'img/sprites/skater-us-side.webp',
 ];
 
 self.addEventListener('install', e => {

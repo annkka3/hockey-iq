@@ -42,6 +42,9 @@ function load(name) {
 export function skaterImage(team, view) {
   return load(`skater-${team === 'us' ? 'us' : 'them'}-${view === 'back' ? 'back' : view === 'side' ? 'side' : 'front'}`);
 }
+/* Вратарь целиком для броска: стойка или «бабочка» (кадр 640 × 600, опора (320, 588)); fig — высота фигуры в единицах. */
+export const GOALIE_POSE = { stand: { file: 'goalie-them-front', fig: 560 }, butterfly: { file: 'goalie-them-butterfly', fig: 466 } };
+export function goaliePoseImage(pose) { return load(GOALIE_POSE[pose].file); }
 export function goalieImage(team, back) {
   return load(`goalie-${team === 'us' ? 'us' : 'them'}-${back ? 'back' : 'front'}`);
 }
@@ -58,7 +61,7 @@ export function preload() {
     for (const v of ['front', 'side', 'back']) skaterImage(team, v);
     goalieImage(team, false); goalieImage(team, true);
   }
-  for (const id of Object.keys(PART_FILE)) goaliePartImage(id);
+  goaliePoseImage('stand'); goaliePoseImage('butterfly');
   ownStickImage('L'); ownStickImage('R'); arenaImage();
 }
 export const ready = img => !!img && img.complete && img.naturalWidth > 0;

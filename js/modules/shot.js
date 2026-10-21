@@ -4,7 +4,7 @@ import { RINKS, boardsPath } from '../engine/rink.js';
 import { drawRink } from '../engine/render.js';
 import { tween, cancelAll, ease } from '../engine/anim.js';
 import * as P from '../engine/shot.js';
-import { goaliePartImage, ownStickImage, arenaImage, skaterImage, META, PART_AR, ready as imgReady, preload as preloadSprites } from '../engine/sprites.js';
+import { ownStickImage, arenaImage, skaterImage, goaliePoseImage, GOALIE_POSE, META, ready as imgReady, preload as preloadSprites } from '../engine/sprites.js';
 import { state, startSession, logItem, finishSession, setProfile } from '../core/state.js';
 
 const R = RINKS.iihf;
@@ -525,52 +525,37 @@ function runGame(mode, set, rerender) {
       }
     }
 
-    /* Вратарь из иллюстрированных частей: каждая часть (маска, нагрудник, щитки, ловушка, блин, клюшка) рисуется
-       ровно в прямоугольнике, который считает модель броска, — поэтому видимый сейв совпадает с расчётом. */
+    /* Вратарь — цельный рисунок (стойка или «бабочка»), без растяжек: пропорции головы, корпуса и щитков
+       всегда как у человека. Ставится коньками на лёд в центр корпуса по модели, рост — по высоте силуэта модели.
+       Что именно перекрыто воротам по расчёту — полупрозрачная тень под рисунком; при сейве часть, которая
+       дотянулась (ловушка, блин, щиток), обводится пунктиром там, где её остановила модель. */
     function drawGoalie(sil, partShift) {
-      const box = p => {
-        const sh = partShift && partShift.id === p.id ? partShift : null;
+      const box = (p, sh) => {
         const us = p.pts.map(q => q.u + (sh ? sh.u : 0)), vs = p.pts.map(q => q.v + (sh ? sh.v : 0));
         const a = toPx(Math.min(...us), Math.max(...vs)), b = toPx(Math.max(...us), Math.min(...vs));
         return { x: a.x, y: a.y, w: Math.max(2, b.x - a.x), h: Math.max(2, b.y - a.y) };
       };
-      // контактная тень под вратарём
-      const all = sil.map(box), minX = Math.min(...all.map(b => b.x)), maxX = Math.max(...all.map(b => b.x + b.w)), baseY = Math.max(...all.map(b => b.y + b.h));
-      ctx.fillStyle = 'rgba(20,40,70,.25)'; ctx.beginPath(); ctx.ellipse((minX + maxX) / 2, baseY, (maxX - minX) * 0.55, 6 * dpr, 0, 0, 7); ctx.fill();
-      // закрытая вратарём часть ворот (точная проекция модели) — полупрозрачной тенью; при остром угле
-      // она сильно вытягивается, а рисунок вратаря сохраняет пропорции и стоит в её центре
-      ctx.fillStyle = 'rgba(212,42,60,.16)';
+      const shiftOf = p => (partShift && partShift.id === p.id ? partShift : null);
+      const all = sil.map(p => box(p));
+      const minX = Math.min(...all.map(b => b.x)), maxX = Math.max(...all.map(b => b.x + b.w));
+      const topY = Math.min(...all.map(b => b.y)), baseY = Math.max(...all.map(b => b.y + b.h));
+      // закрытая часть ворот по модели
+      ctx.fillStyle = 'rgba(212,42,60,.14)';
       for (const p of sil) {
-        const sh = partShift && partShift.id === p.id ? partShift : null;
+        const sh = shiftOf(p);
         ctx.beginPath(); p.pts.forEach((q, i) => { const pp = toPx(q.u + (sh ? sh.u : 0), q.v + (sh ? sh.v : 0)); i ? ctx.lineTo(pp.x, pp.y) : ctx.moveTo(pp.x, pp.y); }); ctx.closePath(); ctx.fill();
       }
-      const order = ['stick', 'pads', 'legL', 'legR', 'body', 'blocker', 'glove', 'head'];
-      const bodyP = sil.find(q => q.id === 'body'), midX = bodyP ? box(bodyP).x + box(bodyP).w / 2 : face.width / 2;
-      for (const id of order) for (const p of sil.filter(q => q.id === id)) {
-        const b = box(p);
-        const ar = PART_AR[id] || 1, bar = b.w / b.h;
-        const lim = id === 'stick' ? 1.4 : 1.15; // рисунок держит пропорции; точная закрытая площадь — тенью выше
-        if (bar > ar * lim) { const w = b.h * ar * lim; b.x += (b.w - w) / 2; b.w = w; }
-        else if (bar < ar / lim) { const hh = b.w / ar * lim; b.y += (b.h - hh); b.h = hh; }
-        const img = goaliePartImage(id);
-        if (!imgReady(img)) continue;
-        if (id === 'body') { // свитер шире корпуса: плечи и рукава до ловушки и блина
-          const ex = b.w * 0.42;
-          ctx.drawImage(img, b.x - ex, b.y - b.h * 0.06, b.w + ex * 2, b.h * 1.08);
-        } else if (id === 'head') {
-          const ex = b.w * 0.15;
-          ctx.drawImage(img, b.x - ex, b.y - b.h * 0.2, b.w + ex * 2, b.h * 1.35);
-        } else if (id === 'stick') {
-          // в картинке крюк занимает 33–98 % ширины и 52–78 % высоты; древко уходит вверх к блину
-          const iw = b.w / 0.65 * 1.25, ih = iw / PART_AR.stick;
-          const x0 = b.x + b.w / 2 - 0.655 * iw, y0 = b.y + b.h - 0.78 * ih;
-          ctx.drawImage(img, x0, y0, iw, ih);
-        } else if (id === 'legL' || id === 'legR') {
-          // наружный край щитка (с валиками) — дальше от центра вратаря
-          const right = b.x + b.w / 2 > midX;
-          if (right) { ctx.save(); ctx.translate(b.x + b.w / 2, 0); ctx.scale(-1, 1); ctx.translate(-(b.x + b.w / 2), 0); ctx.drawImage(img, b.x, b.y, b.w, b.h); ctx.restore(); }
-          else ctx.drawImage(img, b.x, b.y, b.w, b.h);
-        } else ctx.drawImage(img, b.x, b.y, b.w, b.h);
+      const pose = sil.some(q => q.id === 'pads') ? 'butterfly' : 'stand';
+      const img = goaliePoseImage(pose), M = META.goalie;
+      const body = sil.find(q => q.id === 'body'), bb = body ? box(body) : null;
+      const cx = bb ? bb.x + bb.w / 2 : (minX + maxX) / 2;
+      const sc = (baseY - topY) / GOALIE_POSE[pose].fig;
+      ctx.fillStyle = 'rgba(20,40,70,.28)'; ctx.beginPath(); ctx.ellipse(cx, baseY, 250 * sc, 22 * sc, 0, 0, 7); ctx.fill();
+      if (imgReady(img)) ctx.drawImage(img, cx - M.ax * sc, baseY - M.ay * sc, M.w * sc, M.h * sc);
+      if (partShift) for (const p of sil.filter(q => q.id === partShift.id)) {
+        ctx.setLineDash([5 * dpr, 4 * dpr]); ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 2 * dpr;
+        ctx.beginPath(); p.pts.forEach((q, i) => { const pp = toPx(q.u + partShift.u, q.v + partShift.v); i ? ctx.lineTo(pp.x, pp.y) : ctx.moveTo(pp.x, pp.y); }); ctx.closePath(); ctx.stroke();
+        ctx.setLineDash([]);
       }
     }
 

@@ -305,11 +305,11 @@ export class Pov {
     // крюк лежит на льду в 1,1 м впереди, на стороне хвата; перчатка с рукавом уходит в нижний угол кадра
     const b = P(me.x + fx * 1.15 + lx * hs * 0.45, me.y + fy * 1.15 + ly * hs * 0.45, 0.03);
     const img = ownStickImage(hand);
-    if (b && ready(img)) {
-      // в картинке (1024 × 512) середина крюка — около (0,36; 0,85) ширины/высоты у левого хвата, у правого — зеркально
-      const iw = W * 0.8, ih = iw / 2, bx = hs > 0 ? 0.36 : 0.64;
-      const x = b.x - bx * iw;
-      ctx.drawImage(img, x, Math.min(Math.max(b.y, H * 0.9), H * 0.99) - 0.85 * ih, iw, ih);
+    if (ready(img)) {
+      // картинка 1024 × 512: рукав уходит за правый (у правого хвата — левый) и нижний край кадра, без «оторванной» перчатки
+      const iw = W * 0.9, ih = iw / 2;
+      const x = hs > 0 ? W - iw * 0.97 : -iw * 0.03, y = H - ih * 0.93;
+      ctx.drawImage(img, x, y, iw, ih);
       return;
     }
     if (!b) return;
