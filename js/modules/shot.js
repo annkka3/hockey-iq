@@ -4,7 +4,7 @@ import { RINKS, boardsPath } from '../engine/rink.js';
 import { drawRink } from '../engine/render.js';
 import { tween, cancelAll, ease } from '../engine/anim.js';
 import * as P from '../engine/shot.js';
-import { ownStickImage, arenaImage, skaterImage, goaliePoseImage, GOALIE_POSE, META, ready as imgReady, preload as preloadSprites } from '../engine/sprites.js';
+import { ownStickImage, arenaImage, skaterImage, goaliePoseImage, GOALIE_UPM, META, ready as imgReady, preload as preloadSprites } from '../engine/sprites.js';
 import { state, startSession, logItem, finishSession, setProfile } from '../core/state.js';
 
 const R = RINKS.iihf;
@@ -529,6 +529,7 @@ function runGame(mode, set, rerender) {
        всегда как у человека. Ставится коньками на лёд в центр корпуса по модели, рост — по высоте силуэта модели.
        Что именно перекрыто воротам по расчёту — полупрозрачная тень под рисунком; при сейве часть, которая
        дотянулась (ловушка, блин, щиток), обводится пунктиром там, где её остановила модель. */
+    let lastGx = null;
     function drawGoalie(sil, partShift) {
       const box = (p, sh) => {
         const us = p.pts.map(q => q.u + (sh ? sh.u : 0)), vs = p.pts.map(q => q.v + (sh ? sh.v : 0));
@@ -545,12 +546,25 @@ function runGame(mode, set, rerender) {
         const sh = shiftOf(p);
         ctx.beginPath(); p.pts.forEach((q, i) => { const pp = toPx(q.u + (sh ? sh.u : 0), q.v + (sh ? sh.v : 0)); i ? ctx.lineTo(pp.x, pp.y) : ctx.moveTo(pp.x, pp.y); }); ctx.closePath(); ctx.fill();
       }
-      const pose = sil.some(q => q.id === 'pads') ? 'butterfly' : 'stand';
-      const img = goaliePoseImage(pose), M = META.goalie;
+      const fly = sil.some(q => q.id === 'pads');
       const body = sil.find(q => q.id === 'body'), bb = body ? box(body) : null;
       const cx = bb ? bb.x + bb.w / 2 : (minX + maxX) / 2;
-      const sc = (baseY - topY) / GOALIE_POSE[pose].fig;
-      ctx.fillStyle = 'rgba(20,40,70,.28)'; ctx.beginPath(); ctx.ellipse(cx, baseY, 250 * sc, 22 * sc, 0, 0, 7); ctx.fill();
+      // поза: сейв той частью, что дотянулась → смещение → разворот к броску сбоку → стойка / бабочка
+      let pose = fly ? 'butterfly' : 'stand';
+      const lat = Math.atan2(S.x, P.GOAL.y - S.y) * 180 / Math.PI;      // >0 — бросок справа для смотрящего
+      const moving = lastGx != null && Math.abs(cx - lastGx) > 0.5 * dpr ? Math.sign(cx - lastGx) : 0;
+      lastGx = cx;
+      if (partShift) {
+        const id = partShift.id;
+        pose = id === 'glove' ? 'glove' : id === 'blocker' ? 'blocker'
+          : (id === 'pads' || id === 'legL' || id === 'legR') && partShift.u < 0 ? 'padL' : pose;
+      } else if (moving > 0 && gState !== 'готов') pose = 'pushR';
+      else if (!fly && lat > 50) pose = 'q3r2';
+      else if (!fly && lat > 22) pose = 'q3r';
+      const img = goaliePoseImage(pose), M = META.goalie;
+      // масштаб: пикселей на метр на глубине вратаря (как у модели), картинка — 300 единиц на метр
+      const ppm = mpx * (body ? body.scale : 1), sc = ppm / GOALIE_UPM;
+      ctx.fillStyle = 'rgba(20,40,70,.28)'; ctx.beginPath(); ctx.ellipse(cx, baseY, 0.75 * ppm, 0.07 * ppm, 0, 0, 7); ctx.fill();
       if (imgReady(img)) ctx.drawImage(img, cx - M.ax * sc, baseY - M.ay * sc, M.w * sc, M.h * sc);
       if (partShift) for (const p of sil.filter(q => q.id === partShift.id)) {
         ctx.setLineDash([5 * dpr, 4 * dpr]); ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 2 * dpr;

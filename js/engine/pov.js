@@ -264,9 +264,13 @@ export class Pov {
       if (ready(img)) ctx.drawImage(img, foot.x - M.ax * sc, foot.y - M.ay * sc, M.w * sc, M.h * sc);
       return { x: foot.x, y: foot.y - hpx * 0.95, text: 'ВР', color: team === 'us' ? '#0F2D52' : '#D8263C', size: k };
     }
-    const view = cosA > 0.5 ? 'front' : cosA < -0.5 ? 'back' : 'side';
+    // скорость по смене позиции между кадрами: едет — шаг катания вместо стойки боком
+    const now = performance.now(), prev = (this.prevPos ||= {})[it.id];
+    const spd = prev && now - prev.t > 0 && now - prev.t < 400 ? Math.hypot(p.x - prev.x, p.y - prev.y) / ((now - prev.t) / 1000) : 0;
+    this.prevPos[it.id] = { x: p.x, y: p.y, t: now };
+    const view = cosA > 0.82 ? 'front' : cosA > 0.3 ? 'q3front' : cosA > -0.3 ? (spd > 1.2 ? 'stride' : 'side') : cosA > -0.82 ? 'q3back' : 'back';
     const faceLeft = ahead ? ahead.x < foot.x : false;
-    const mirror = view === 'side' ? !faceLeft : false;
+    const mirror = view !== 'front' && view !== 'back' ? !faceLeft : false;
     const img = skaterImage(team, view), M = META.skater;
     const hpx = 1.85 * k, sc = hpx / M.h; // рост в шлеме ~1,75 м (фигура 560 из 600 единиц холста)
     const toScr = ([gx, gy]) => ({ x: foot.x + (mirror ? M.ax - gx : gx - M.ax) * sc, y: foot.y + (gy - M.ay) * sc });
@@ -285,14 +289,14 @@ export class Pov {
       ctx.lineWidth = Math.max(2, 0.08 * k); ctx.beginPath(); ctx.moveTo(blade.x, blade.y); ctx.lineTo(toe.x, toe.y); ctx.stroke();
       ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = Math.max(1, 0.03 * k); ctx.beginPath(); ctx.moveTo(blade.x + (toe.x - blade.x) * 0.25, blade.y + (toe.y - blade.y) * 0.25); ctx.lineTo(blade.x + (toe.x - blade.x) * 0.75, blade.y + (toe.y - blade.y) * 0.75); ctx.stroke();
     };
-    if (view === 'back') stick();
+    if (view === 'back' || view === 'q3back') stick();
     if (ready(img)) {
       ctx.save();
       if (mirror) { ctx.translate(foot.x, 0); ctx.scale(-1, 1); ctx.translate(-foot.x, 0); }
       ctx.drawImage(img, foot.x - M.ax * sc, foot.y - M.ay * sc, M.w * sc, M.h * sc);
       ctx.restore();
     }
-    if (view !== 'back') stick();
+    if (view !== 'back' && view !== 'q3back') stick();
     const lb = en.node.querySelector('text'), txt = lb ? lb.textContent : '';
     return txt ? { x: foot.x, y: foot.y - hpx * 0.98, text: txt, color: team === 'us' ? '#0F2D52' : '#D8263C', size: k } : null;
   }
