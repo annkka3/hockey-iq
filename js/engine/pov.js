@@ -6,6 +6,7 @@
    Источник правды — Scene: позиции, направление корпуса и хват берутся из её сущностей каждый кадр. */
 import { fromScreen } from './rink.js';
 import { skaterImage, goalieImage, ownStickImage, arenaImage, GLOVES, META, ready, preload } from './sprites.js';
+import { stickPose, toWorld, STICK } from './stick.js';
 
 const EYE = 1.6, PITCH = 0.11, FOV = 80 * Math.PI / 180, NEAR = 0.35;
 const NS = 'http://www.w3.org/2000/svg';
@@ -301,31 +302,44 @@ export class Pov {
     const img = skaterImage(team, view), M = META.skater;
     const hpx = 1.85 * k, sc = hpx / M.h; // рост в шлеме ~1,75 м (фигура 560 из 600 единиц холста)
     const toScr = ([gx, gy]) => ({ x: foot.x + (mirror ? M.ax - gx : gx - M.ax) * sc, y: foot.y + (gy - M.ay) * sc });
-    // клюшка: крюк — в точке stick или впереди на стороне хвата; древко от нижней перчатки
-    const st = en.data.stick;
-    const blade = st ? P(st[0], st[1], 0.03) : P(p.x + fx * 0.95 + lx * hs * 0.45, p.y + fy * 0.95 + ly * hs * 0.45, 0.03);
-    // носок крюка — наружу от корпуса, с той стороны, где крюк на самом деле (как на схеме), продолжая древко
-    const side = st ? (Math.sign((st[0] - p.x) * lx + (st[1] - p.y) * ly) || hs) : hs;
-    const toe = st ? P(st[0] + lx * side * 0.32, st[1] + ly * side * 0.32, 0.03) : P(p.x + fx * 1.0 + lx * hs * 0.78, p.y + fy * 1.0 + ly * hs * 0.78, 0.03);
-    const gl = GLOVES[view].map(toScr);
-    const grip = gl[blade && Math.abs(blade.x - gl[0].x) < Math.abs(blade.x - gl[1].x) ? 0 : 1];
-    const other = gl[0] === grip ? gl[1] : gl[0];
+    // клюшка — та же модель, что на схеме (en.stickPose): торец, нижняя рука, пятка, носок, рабочая сторона.
+    const sp = en.stickPose || stickPose({ hand });
+    const W3 = q => toWorld(q, p, fw);
+    const heelW = W3(sp.heel), toeW = W3(sp.toe);
+    const heel = P(heelW.x, heelW.y, 0.02), toe = P(toeW.x, toeW.y, 0.02);
+    // перчатки на картинке — анатомические (левая/правая рука). Зеркальный ракурс меняет руки местами:
+    // левая рука исходной картинки становится правой — учитываем это явно, хват игрока не меняется.
+    const G = GLOVES[view], anat = h => toScr(G[mirror ? (h === 'L' ? 'R' : 'L') : h]);
+    const gBottom = anat(sp.bottomHand), gTop = anat(sp.topHand);
     const stick = () => {
-      if (!blade || !toe) return;
+      if (!heel || !toe) return;
+      // древко — прямая от пятки через нижнюю руку до торца (без излома); длина — по доле нижней руки на древке
+      // над нижней рукой древко продолжается на свою реальную длину (0,42 м до торца в масштабе этой глубины)
+      const dx = gBottom.x - heel.x, dy = gBottom.y - heel.y, dl = Math.hypot(dx, dy) || 1;
+      const up = STICK.bottomAt * k;
+      const knob = { x: gBottom.x + dx / dl * up, y: gBottom.y + dy / dl * up };
       ctx.lineCap = 'round';
-      ctx.strokeStyle = '#1B1E23'; ctx.lineWidth = Math.max(1.5, 0.045 * k);
-      ctx.beginPath(); ctx.moveTo(other.x, other.y); ctx.lineTo(blade.x, blade.y); ctx.stroke();
-      ctx.lineWidth = Math.max(2, 0.08 * k); ctx.beginPath(); ctx.moveTo(blade.x, blade.y); ctx.lineTo(toe.x, toe.y); ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = Math.max(1, 0.03 * k); ctx.beginPath(); ctx.moveTo(blade.x + (toe.x - blade.x) * 0.25, blade.y + (toe.y - blade.y) * 0.25); ctx.lineTo(blade.x + (toe.x - blade.x) * 0.75, blade.y + (toe.y - blade.y) * 0.75); ctx.stroke();
+      ctx.strokeStyle = '#1B1E23'; ctx.lineWidth = Math.max(1.5, 0.04 * k);
+      ctx.beginPath(); ctx.moveTo(knob.x, knob.y); ctx.lineTo(heel.x, heel.y); ctx.stroke();
+      ctx.lineWidth = Math.max(2, 0.07 * k); ctx.beginPath(); ctx.moveTo(heel.x, heel.y); ctx.lineTo(toe.x, toe.y); ctx.stroke();
+      // рабочая сторона крюка — светлая лента со стороны лицевой поверхности
+      const nW = W3({ f: (sp.heel.f + sp.toe.f) / 2 + sp.normal.f * 0.05, l: (sp.heel.l + sp.toe.l) / 2 + sp.normal.l * 0.05 }), nP = P(nW.x, nW.y, 0.02);
+      const mid = { x: (heel.x + toe.x) / 2, y: (heel.y + toe.y) / 2 };
+      const ox = nP ? Math.sign(nP.x - mid.x) * Math.min(Math.abs(nP.x - mid.x), 0.02 * k) : 0, oy = nP ? Math.sign(nP.y - mid.y) * Math.min(Math.abs(nP.y - mid.y), 0.02 * k) : 0;
+      ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = Math.max(1, 0.03 * k);
+      ctx.beginPath(); ctx.moveTo(heel.x + (toe.x - heel.x) * 0.2 + ox, heel.y + (toe.y - heel.y) * 0.2 + oy); ctx.lineTo(heel.x + (toe.x - heel.x) * 0.85 + ox, heel.y + (toe.y - heel.y) * 0.85 + oy); ctx.stroke();
+      this.gripDebug = { top: gTop, bottom: gBottom, knob };
     };
-    if (view === 'back' || view === 'q3back') stick();
+    // клюшка дальше от камеры, чем игрок, — рисуется до картинки (корпус её закрывает), ближе — после
+    const behind = heel && heel.d > foot.d;
+    if (behind) stick();
     if (ready(img)) {
       ctx.save();
       if (mirror) { ctx.translate(foot.x, 0); ctx.scale(-1, 1); ctx.translate(-foot.x, 0); }
       ctx.drawImage(img, foot.x - M.ax * sc, foot.y - M.ay * sc, M.w * sc, M.h * sc);
       ctx.restore();
     }
-    if (view !== 'back' && view !== 'q3back') stick();
+    if (!behind) stick();
     const lb = en.node.querySelector('text'), txt = lb ? lb.textContent : '';
     return txt ? { x: foot.x, y: foot.y - hpx * 0.98, text: txt, color: team === 'us' ? '#0F2D52' : '#D8263C', size: k } : null;
   }
@@ -341,7 +355,9 @@ export class Pov {
     if (ready(img)) {
       // картинка 1024 × 512: рукав уходит за правый (у правого хвата — левый) и нижний край кадра, без «оторванной» перчатки
       const iw = W * 0.9, ih = iw / 2;
-      const x = hs > 0 ? W - iw * 0.97 : -iw * 0.03, y = H - ih * 0.93;
+      // клюшка держится корпусом: поворот головы (взгляд через плечо) уводит её в сторону кадра, хват не меняется
+      const gx = -(this.glance / (FOV / 2)) * W * 0.5;
+      const x = (hs > 0 ? W - iw * 0.97 : -iw * 0.03) + gx, y = H - ih * 0.93;
       ctx.drawImage(img, x, y, iw, ih);
       return;
     }

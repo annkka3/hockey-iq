@@ -382,6 +382,7 @@ textarea.input { min-height: 90px; resize: vertical; }
 .ent .skate { fill: #2B333D; }
 .ent .stick { stroke: #3A2A1A; stroke-width: 0.1; stroke-linecap: round; }
 .ent .blade { fill: #111418; }
+.ent .blade-face { stroke: #F4F7FA; stroke-width: 0.05; stroke-linecap: round; } /* рабочая сторона крюка */
 .ent.goalie .pads { fill: #F3F6F9; stroke: #0F2D52; stroke-width: 0.07; }
 .ent.goalie.them .pads { stroke: #D8263C; }
 .ent.goalie .glove, .ent.goalie .blocker { fill: #F3F6F9; stroke: #0F2D52; stroke-width: 0.06; }

@@ -2,6 +2,7 @@
    Сцена получает карточку и профиль площадки, ничего не знает о прогрессе и аккаунтах. */
 import { RINKS, mapPoint, viewWindow, toScreen, fromScreen, boardsPath, dist } from './rink.js';
 import { tween, lerp, ease } from './anim.js';
+import { stickPose, toBody, actionOf } from './stick.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const el = (tag, attrs = {}, parent) => {
@@ -129,11 +130,12 @@ export class Scene {
       el('rect', { x: -0.36, y: -0.32, width: 0.15, height: 0.68, rx: 0.07, class: 'skate' }, rot);
       el('rect', { x: 0.2, y: -0.2, width: 0.15, height: 0.68, rx: 0.07, class: 'skate' }, rot);
       stick = el('line', { x1: -0.32, y1: -0.42, x2: -0.5, y2: -1.15, class: 'stick' }, rot);
-      blade = el('rect', { x: -0.04, y: -0.08, width: 0.5, height: 0.16, rx: 0.07, class: 'blade' }, rot);
+      blade = el('rect', { x: -0.03, y: -0.065, width: 0.36, height: 0.13, rx: 0.06, class: 'blade' }, rot);
+      var face = el('line', { x1: 0.02, y1: 0, x2: 0.3, y2: 0, class: 'blade-face' }, rot);
       el('ellipse', { cx: 0, cy: 0.04, rx: 0.72, ry: 0.44, class: 'body' }, rot);
       el('path', { d: 'M-0.62 0.08 Q0 0.36 0.62 0.08', class: 'trim' }, rot);
-      el('circle', { cx: -0.34, cy: -0.36, r: 0.15, class: 'glove' }, rot);
-      el('circle', { cx: 0.12, cy: -0.42, r: 0.15, class: 'glove' }, rot);
+      var gTop = el('circle', { cx: 0.12, cy: -0.42, r: 0.15, class: 'glove' }, rot);
+      var gBot = el('circle', { cx: -0.34, cy: -0.36, r: 0.15, class: 'glove' }, rot);
       el('circle', { cx: 0, cy: -0.04, r: 0.31, class: 'helmet' }, rot);
       el('path', { d: 'M-0.2 -0.22 Q0 -0.36 0.2 -0.22', class: 'visor' }, rot);
     }
@@ -141,7 +143,7 @@ export class Scene {
     t.textContent = e.me ? 'Я' : (e.label || (team === 'them' && e.role !== 'G' ? '' : LABELS[e.role] || ''));
     if (t.textContent.length > 1) t.setAttribute('class', 'label small');
     const from = e.from ? this.pt({ x: e.from[0], y: e.from[1] }) : null;
-    this.ents[e.id] = { node: g, rot, stick, blade, pos: p, home: p, from, data: e, team, goalie };
+    this.ents[e.id] = { node: g, rot, stick, blade, face: goalie ? null : face, gloves: goalie ? null : { top: gTop, bottom: gBot }, pos: p, home: p, from, data: e, team, goalie };
   }
 
   /* Куда смотрит игрок (вектор в мировых координатах). */
@@ -168,23 +170,33 @@ export class Scene {
     const a = Math.atan2(fx, fy);
     en.angle = a; en.faceW = { x: fx, y: fy };
     en.rot.setAttribute('transform', `rotate(${(a * 180 / Math.PI).toFixed(1)})`);
-    const lefty = this.handOf(en) === 'L';
-    let bx = en.goalie ? 0 : (lefty ? -0.5 : 0.5), by = en.goalie ? -0.87 : -1.15;
-    if (stickWorld) {
-      const sp = this.pt({ x: stickWorld[0], y: stickWorld[1] }), dx = (sp.x - en.home.x) / this.tok, dy = (sp.y - en.home.y) / this.tok;
-      const c = Math.cos(a), s = Math.sin(a);
-      bx = dx * c + dy * s; by = -dx * s + dy * c;
-      const l = Math.hypot(bx, by), m = 1.9 / this.tok * 1.4;
-      if (l > m) { bx *= m / l; by *= m / l; }
+    const hand = this.handOf(en);
+    if (en.goalie) {
+      return;
     }
-    if (!en.goalie) {
-      const hx = bx < 0 ? -0.32 : 0.28;
-      en.stick.setAttribute('x1', hx); en.stick.setAttribute('y1', -0.42); en.stick.setAttribute('x2', bx); en.stick.setAttribute('y2', by);
-      // крюк — «носком» наружу от корпуса, буквой Г к рукоятке
-      const sh = Math.atan2(by + 0.42, bx - hx) * 180 / Math.PI;
-      const ang = sh + (bx < 0 ? -90 : 90);
-      en.blade.setAttribute('transform', `translate(${bx.toFixed(2)} ${by.toFixed(2)}) rotate(${ang.toFixed(1)})`);
-    }
+    // клюшка — из общей модели (js/engine/stick.js): та же поза, что в виде «Глазами».
+    // На схеме фишка крупнее реального игрока, поэтому вся поза клюшки масштабирована вместе с фишкой (K).
+    const me = fromScreen(en.home, this.rink), fw = { x: fx, y: fy };
+    let contact = null;
+    if (stickWorld) { const w = mapPoint({ x: stickWorld[0], y: stickWorld[1] }, this.rink); contact = toBody(w, me, fw); }
+    const pk = this.ents.puck ? fromScreen(this.ents.puck.home || this.ents.puck.pos, this.rink) : null;
+    const action = actionOf(en.data, this.card, me, pk);
+    if (!contact && action === 'carry' && pk) contact = toBody(pk, me, fw);
+    const sp = stickPose({ hand, action, contact });
+    en.stickPose = sp;
+    const K = 1.5, X = q => -q.l * K, Y = q => -q.f * K;
+    en.stick.setAttribute('x1', X(sp.knob)); en.stick.setAttribute('y1', Y(sp.knob));
+    en.stick.setAttribute('x2', X(sp.heel)); en.stick.setAttribute('y2', Y(sp.heel));
+    const ang = Math.atan2(Y(sp.toe) - Y(sp.heel), X(sp.toe) - X(sp.heel)) * 180 / Math.PI;
+    en.blade.setAttribute('transform', `translate(${X(sp.heel).toFixed(2)} ${Y(sp.heel).toFixed(2)}) rotate(${ang.toFixed(1)})`);
+    // рабочая сторона крюка — светлая кромка со стороны нормали
+    const ar = ang * Math.PI / 180, nX = -sp.normal.l, nY = -sp.normal.f;
+    const off = (nX * -Math.sin(ar) + nY * Math.cos(ar)) >= 0 ? 0.065 : -0.065;
+    en.face.setAttribute('transform', en.blade.getAttribute('transform'));
+    en.face.setAttribute('y1', off); en.face.setAttribute('y2', off);
+    // перчатки: верхняя рука — у торца, нижняя — на древке
+    en.gloves.top.setAttribute('cx', X(sp.knob)); en.gloves.top.setAttribute('cy', Y(sp.knob));
+    en.gloves.bottom.setAttribute('cx', X(sp.bottom)); en.gloves.bottom.setAttribute('cy', Y(sp.bottom));
   }
 
   /* Хват: у «Я» — из профиля, у остальных — из карточки (hand), иначе устойчиво по id: ~60 % левшей, как в российском и канадском хоккее. */
