@@ -5,7 +5,7 @@
    (хват), согнуты ли колени. Над головой — подпись амплуа, как на схеме.
    Источник правды — Scene: позиции, направление корпуса и хват берутся из её сущностей каждый кадр. */
 import { fromScreen } from './rink.js';
-import { skaterImage, goalieImage, ownStickImage, arenaImage, GLOVES, META, ready, preload } from './sprites.js';
+import { gripSprite, goalieImage, ownStickImage, arenaImage, META, ready, preload } from './sprites.js';
 import { stickPose, toWorld, STICK } from './stick.js';
 
 const EYE = 1.6, PITCH = 0.11, FOV = 80 * Math.PI / 180, NEAR = 0.35;
@@ -298,40 +298,40 @@ export class Pov {
     this.prevPos[it.id] = { x: p.x, y: p.y, t: now };
     const view = cosA > 0.82 ? 'front' : cosA > 0.3 ? 'q3front' : cosA > -0.3 ? (spd > 1.2 ? 'stride' : 'side') : cosA > -0.82 ? 'q3back' : 'back';
     const faceLeft = ahead ? ahead.x < foot.x : false;
-    const mirror = view !== 'front' && view !== 'back' ? !faceLeft : false;
-    const img = skaterImage(team, view), M = META.skater;
+    const gs = gripSprite(team, view, hand, faceLeft), img = gs.img, mirror = gs.mirror, M = META.skater;
     const hpx = 1.85 * k, sc = hpx / M.h; // рост в шлеме ~1,75 м (фигура 560 из 600 единиц холста)
     const toScr = ([gx, gy]) => ({ x: foot.x + (mirror ? M.ax - gx : gx - M.ax) * sc, y: foot.y + (gy - M.ay) * sc });
-    // клюшка — та же модель, что на схеме (en.stickPose): торец, нижняя рука, пятка, носок, рабочая сторона.
+    // клюшка — модель (en.stickPose, как на схеме) + руки картинки: древко — прямая через верхнюю и нижнюю руку,
+    // продолжается до льда на глубине пятки из модели; крюк направлен как в модели, рабочая сторона — лентой.
     const sp = en.stickPose || stickPose({ hand });
     const W3 = q => toWorld(q, p, fw);
     const heelW = W3(sp.heel), toeW = W3(sp.toe);
-    const heel = P(heelW.x, heelW.y, 0.02), toe = P(toeW.x, toeW.y, 0.02);
-    // перчатки на картинке — анатомические (левая/правая рука). Зеркальный ракурс меняет руки местами:
-    // левая рука исходной картинки становится правой — учитываем это явно, хват игрока не меняется.
-    const G = GLOVES[view], anat = h => toScr(G[mirror ? (h === 'L' ? 'R' : 'L') : h]);
-    const gBottom = anat(sp.bottomHand), gTop = anat(sp.topHand);
+    const mHeel = P(heelW.x, heelW.y, 0.02), mToe = P(toeW.x, toeW.y, 0.02);
+    const gTop = toScr(gs.top), gBot = toScr(gs.bottom);
+    let heel = null, toe = null, knob = null;
+    if (mHeel && mToe) {
+      const dx = gBot.x - gTop.x, dy = gBot.y - gTop.y, len = Math.hypot(dx, dy) || 1;
+      let s1 = dy > 1 ? (mHeel.y - gBot.y) / dy : 0;
+      const maxS = (STICK.len * 1.05 * k - len) / len;          // клюшка не длиннее настоящей
+      s1 = Math.max(0.4, Math.min(maxS, s1));
+      heel = { x: gBot.x + dx * s1, y: gBot.y + dy * s1 };
+      toe = { x: heel.x + (mToe.x - mHeel.x), y: heel.y + (mToe.y - mHeel.y) };
+      knob = { x: gTop.x - dx / len * 0.08 * k, y: gTop.y - dy / len * 0.08 * k };
+    }
     const stick = () => {
-      if (!heel || !toe) return;
-      // древко — прямая от пятки через нижнюю руку до торца (без излома); длина — по доле нижней руки на древке
-      // над нижней рукой древко продолжается на свою реальную длину (0,42 м до торца в масштабе этой глубины)
-      const dx = gBottom.x - heel.x, dy = gBottom.y - heel.y, dl = Math.hypot(dx, dy) || 1;
-      const up = STICK.bottomAt * k;
-      const knob = { x: gBottom.x + dx / dl * up, y: gBottom.y + dy / dl * up };
+      if (!heel) return;
       ctx.lineCap = 'round';
       ctx.strokeStyle = '#1B1E23'; ctx.lineWidth = Math.max(1.5, 0.04 * k);
       ctx.beginPath(); ctx.moveTo(knob.x, knob.y); ctx.lineTo(heel.x, heel.y); ctx.stroke();
       ctx.lineWidth = Math.max(2, 0.07 * k); ctx.beginPath(); ctx.moveTo(heel.x, heel.y); ctx.lineTo(toe.x, toe.y); ctx.stroke();
-      // рабочая сторона крюка — светлая лента со стороны лицевой поверхности
       const nW = W3({ f: (sp.heel.f + sp.toe.f) / 2 + sp.normal.f * 0.05, l: (sp.heel.l + sp.toe.l) / 2 + sp.normal.l * 0.05 }), nP = P(nW.x, nW.y, 0.02);
-      const mid = { x: (heel.x + toe.x) / 2, y: (heel.y + toe.y) / 2 };
-      const ox = nP ? Math.sign(nP.x - mid.x) * Math.min(Math.abs(nP.x - mid.x), 0.02 * k) : 0, oy = nP ? Math.sign(nP.y - mid.y) * Math.min(Math.abs(nP.y - mid.y), 0.02 * k) : 0;
+      const mm = { x: (mHeel.x + mToe.x) / 2, y: (mHeel.y + mToe.y) / 2 };
+      const ox = nP ? Math.sign(nP.x - mm.x) * Math.min(Math.abs(nP.x - mm.x), 0.02 * k) : 0, oy = nP ? Math.sign(nP.y - mm.y) * Math.min(Math.abs(nP.y - mm.y), 0.02 * k) : 0;
       ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = Math.max(1, 0.03 * k);
       ctx.beginPath(); ctx.moveTo(heel.x + (toe.x - heel.x) * 0.2 + ox, heel.y + (toe.y - heel.y) * 0.2 + oy); ctx.lineTo(heel.x + (toe.x - heel.x) * 0.85 + ox, heel.y + (toe.y - heel.y) * 0.85 + oy); ctx.stroke();
-      this.gripDebug = { top: gTop, bottom: gBottom, knob };
     };
     // клюшка дальше от камеры, чем игрок, — рисуется до картинки (корпус её закрывает), ближе — после
-    const behind = heel && heel.d > foot.d;
+    const behind = mHeel && mHeel.d > foot.d;
     if (behind) stick();
     if (ready(img)) {
       ctx.save();

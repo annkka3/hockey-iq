@@ -32,6 +32,33 @@ export const GLOVES = {
   back: { L: [170, 305], R: [382, 305] },
 };
 
+/* Картинки с хватом: руки держат (невидимую) клюшку — верхняя рука у бедра, нижняя ниже и впереди,
+   обе на одной прямой, которая продолжается к крюку на льду. Клюшку рисует код по этой прямой.
+   top / bottom — центры кулаков верхней и нижней руки (координаты незеркальной картинки).
+   Асимметричные ракурсы нарисованы смотрящими влево для обоих хватов; вправо — зеркало картинки другого хвата
+   (зеркало левого хвата — это правый хват). Спереди и сзади есть только левый хват, правый — его зеркало. */
+export const GRIPS = {
+  'front-gL': { top: [205, 255], bottom: [292, 372] },
+  'back-gL': { top: [408, 252], bottom: [178, 335] },
+  'q3front-gL': { top: [185, 250], bottom: [270, 365] },
+  'q3front-gR': { top: [372, 255], bottom: [270, 350] },
+  'side-gL': { top: [350, 245], bottom: [182, 365] },
+  'side-gR': { top: [302, 272], bottom: [100, 372] },
+  'stride-gL': { top: [275, 245], bottom: [82, 375] },
+  'stride-gR': { top: [268, 255], bottom: [72, 375] },
+  'q3back-gL': { top: [400, 245], bottom: [150, 345] },
+};
+/* Какая картинка нужна игроку с хватом hand в ракурсе view, смотрящему влево (faceLeft) или вправо. */
+export function gripSprite(team, view, hand, faceLeft) {
+  const t = team === 'us' ? 'us' : 'them', other = hand === 'L' ? 'R' : 'L';
+  let key, mirror;
+  if (view === 'front' || view === 'back') { key = view + '-gL'; mirror = hand === 'R'; }
+  else if (faceLeft) { key = view + '-g' + hand; mirror = false; }
+  else { key = view + '-g' + other; mirror = true; }
+  if (!GRIPS[key]) { key = 'back-gL'; mirror = hand === 'R'; } // вид три четверти со спины, правый хват влево — пока нет картинки
+  return { img: load(`skater-${t}-${key}`), mirror, ...GRIPS[key] };
+}
+
 const cache = new Map();
 function load(name) {
   if (!cache.has(name)) {
@@ -74,6 +101,7 @@ export function arenaImage() { return load('arena-back'); }
 export function preload() {
   for (const team of ['us', 'them']) {
     for (const v of SKATER_VIEWS) skaterImage(team, v);
+    for (const k of Object.keys(GRIPS)) load(`skater-${team}-${k}`);
     goalieImage(team, false); goalieImage(team, true);
   }
   GOALIE_POSES.forEach(goaliePoseImage);
