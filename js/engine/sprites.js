@@ -53,6 +53,7 @@ export const GRIPS = {
   'side-receive-gR': { top: [160, 310], bottom: [200, 375] },
   // торможение (хоккейная остановка), вполоборота лицом, смотрит влево, правый хват; левый хват — зеркало
   'brake-gR': { top: [338, 250], bottom: [262, 345] },
+  'brake-gL': { top: [210, 250], bottom: [295, 370] },   // левый хват лицом влево (зеркало картинки «правый хват лицом вправо»)
   'front-receive-gL': { top: [205, 260], bottom: [320, 375] },
   // пас, бросок, перехват (крюк в линии паса): сбоку в обоих хватах, перехват — ещё и спереди
   'side-pass-gL': { top: [400, 262], bottom: [157, 391] },
@@ -63,12 +64,14 @@ export const GRIPS = {
   'side-block-gR': { top: [336, 247], bottom: [22, 427] },
   'front-block-gL': { top: [179, 236], bottom: [336, 427] },
 };
-/* Торможение: есть картинка правого хвата лицом влево; правый хват влево — как есть, левый хват вправо — её зеркало.
-   Остальные сочетания — null (используется обычный ракурс со «снегом» из-под коньков). */
+/* Торможение: две картинки лицом влево — правый хват (brake-gR) и левый хват (brake-gL). Лицом вправо — зеркало
+   картинки другого хвата (зеркало меняет и хват). Так закрыты все четыре сочетания. */
 export function brakeSprite(team, hand, faceLeft) {
   const t = team === 'us' ? 'us' : 'them';
   if (faceLeft && hand === 'R') return { img: load(`skater-${t}-brake-gR`), mirror: false, ...GRIPS['brake-gR'] };
   if (!faceLeft && hand === 'L') return { img: load(`skater-${t}-brake-gR`), mirror: true, ...GRIPS['brake-gR'] };
+  if (faceLeft && hand === 'L') return { img: load(`skater-${t}-brake-gL`), mirror: false, ...GRIPS['brake-gL'] };
+  if (!faceLeft && hand === 'R') return { img: load(`skater-${t}-brake-gL`), mirror: true, ...GRIPS['brake-gL'] };
   return null;
 }
 /* Какая картинка нужна игроку с хватом hand в ракурсе view, смотрящему влево (faceLeft) или вправо. */
