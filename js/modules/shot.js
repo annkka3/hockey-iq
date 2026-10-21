@@ -4,7 +4,7 @@ import { RINKS, boardsPath } from '../engine/rink.js';
 import { drawRink } from '../engine/render.js';
 import { tween, cancelAll, ease } from '../engine/anim.js';
 import * as P from '../engine/shot.js';
-import { ownStickImage, arenaImage, skaterImage, goaliePoseImage, GOALIE_UPM, GOALIE_HANDS, META, ready as imgReady, preload as preloadSprites } from '../engine/sprites.js';
+import { ownStickImage, arenaImage, skaterImage, gripSprite, goaliePoseImage, GOALIE_UPM, GOALIE_HANDS, META, ready as imgReady, preload as preloadSprites } from '../engine/sprites.js';
 /* Промежуточный кадр вратаря между стойкой и бабочкой. */
 const DROP_IMG = new Image(); DROP_IMG.decoding = 'async'; DROP_IMG.src = new URL('../../img/sprites/goalie-pose-drop.webp', import.meta.url).href;
 import { state, startSession, logItem, finishSession, setProfile } from '../core/state.js';
@@ -613,14 +613,33 @@ function runGame(mode, set, rerender) {
       // игрок в 3 м от нас вышел бы в полкадра, поэтому рост растёт не пропорционально близости, а мягче (не больше 1,5×).
       for (const o of others()) {
         const body = o.parts.find(q => q.id === 'body');
-        const img = skaterImage(o.who === 'screen' ? 'us' : 'them', o.who === 'screen' ? 'back' : 'front'), M = META.skater;
+        // с клюшкой: защитник (лицом к нам) — крюк на льду в линии броска; заслон (спиной) — крюк перед собой у ворот
+        const def = o.who !== 'screen';
+        const gs = gripSprite(def ? 'them' : 'us', def ? 'front' : 'back', 'L', false, def ? 'block' : 'ready'), img = gs.img, M = META.skater;
         if (!body || !imgReady(img)) continue;
         const us = body.pts.map(q => q.u), uc = (Math.min(...us) + Math.max(...us)) / 2;
         const near = Math.max(1, body.scale), vis = Math.min(1.5, 1 + (near - 1) * 0.3);
         const footY = yI + (yI - hor) * (vis - 1) * 0.9, x = toPx(uc, 0).x;
         const sc = (1.65 * mpx * vis) / 560;
         ctx.fillStyle = 'rgba(20,40,70,.25)'; ctx.beginPath(); ctx.ellipse(x, footY, 150 * sc, 24 * sc, 0, 0, 7); ctx.fill();
-        ctx.drawImage(img, x - M.ax * sc, footY - M.ay * sc, M.w * sc, M.h * sc);
+        // древко — прямая через обе руки картинки до льда; у защитника лёд ближе к нам (ниже ног), у заслона — дальше (выше)
+        const toS = ([gx, gy]) => ({ x: x + (gs.mirror ? M.ax - gx : gx - M.ax) * sc, y: footY + (gy - M.ay) * sc });
+        const t0 = toS(gs.top), b0 = toS(gs.bottom), iceY = footY + (def ? 40 : -30) * sc;
+        const k = (iceY - b0.y) / ((b0.y - t0.y) || 1), heel = { x: b0.x + (b0.x - t0.x) * k, y: iceY };
+        const side = (heel.x >= x ? 1 : -1), toe = { x: heel.x + side * 0.3 * 560 / 1.65 * sc, y: iceY + (def ? 2 : -1) * sc * 4 };
+        const stick = () => {
+          ctx.save(); ctx.lineCap = 'round';
+          ctx.strokeStyle = '#1B1E23'; ctx.lineWidth = Math.max(2, 9 * sc);
+          ctx.beginPath(); ctx.moveTo(t0.x - (b0.x - t0.x) * 0.15, t0.y - (b0.y - t0.y) * 0.15); ctx.lineTo(heel.x, heel.y); ctx.stroke();
+          ctx.lineWidth = Math.max(3, 15 * sc); ctx.beginPath(); ctx.moveTo(heel.x, heel.y); ctx.lineTo(toe.x, toe.y); ctx.stroke();
+          ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = Math.max(1, 5 * sc);
+          ctx.beginPath(); ctx.moveTo(heel.x + (toe.x - heel.x) * 0.2, heel.y + (toe.y - heel.y) * 0.2); ctx.lineTo(heel.x + (toe.x - heel.x) * 0.85, heel.y + (toe.y - heel.y) * 0.85); ctx.stroke();
+          ctx.restore();
+        };
+        if (!def) stick(); // у заслона клюшка за ним (дальше от нас) — сначала клюшка, потом игрок
+        ctx.save(); if (gs.mirror) { ctx.translate(x, 0); ctx.scale(-1, 1); ctx.translate(-x, 0); }
+        ctx.drawImage(img, x - M.ax * sc, footY - M.ay * sc, M.w * sc, M.h * sc); ctx.restore();
+        if (def) stick();
       }
       // состояние вратаря
       if (!opts.puck) {
