@@ -5,6 +5,8 @@ import { drawRink } from '../engine/render.js';
 import { tween, cancelAll, ease } from '../engine/anim.js';
 import * as P from '../engine/shot.js';
 import { ownStickImage, arenaImage, skaterImage, goaliePoseImage, GOALIE_UPM, GOALIE_HANDS, META, ready as imgReady, preload as preloadSprites } from '../engine/sprites.js';
+/* Промежуточный кадр вратаря между стойкой и бабочкой. */
+const DROP_IMG = new Image(); DROP_IMG.decoding = 'async'; DROP_IMG.src = new URL('../../img/sprites/goalie-pose-drop.webp', import.meta.url).href;
 import { state, startSession, logItem, finishSession, setProfile } from '../core/state.js';
 import { fx } from '../core/fx.js';
 
@@ -779,8 +781,18 @@ function runGame(mode, set, rerender) {
         ctx.save(); ctx.globalAlpha = alpha; ctx.translate(gv.at.x, gv.at.y); if (m.rot) ctx.rotate(m.rot); ctx.scale(1, m.sy);
         ctx.drawImage(im, -M.ax * s0, -M.ay * s0, M.w * s0, M.h * s0); ctx.restore();
       };
-      if (fade < 1) put(goaliePoseImage(gv.prev), 1 - fade, false); else gv.prev = null;
-      put(img, fade, true);
+      // опускание в бабочку и подъём идут через промежуточный кадр (колени сходятся, щитки раскрываются):
+      // прежняя поза → промежуточная → новая, 180 мс
+      const viaDrop = (gv.kind === 'drop' || gv.kind === 'rise') && gv.prev && imgReady(DROP_IMG);
+      if (viaDrop) {
+        const t = clamp((tn - gv.t0) / 180, 0, 1);
+        if (t < 0.5) { put(goaliePoseImage(gv.prev), 1 - 2 * t, false); put(DROP_IMG, 2 * t, true); }
+        else { put(DROP_IMG, 2 - 2 * t, false); put(img, 2 * t - 1, true); }
+        if (t >= 1) gv.prev = null;
+      } else {
+        if (fade < 1) put(goaliePoseImage(gv.prev), 1 - fade, false); else gv.prev = null;
+        put(img, fade, true);
+      }
       if (partShift) for (const p of sil.filter(q => q.id === partShift.id)) {
         ctx.setLineDash([5 * dpr, 4 * dpr]); ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 2 * dpr;
         ctx.beginPath(); p.pts.forEach((q, i) => { const pp = toPx(q.u + partShift.u, q.v + partShift.v); i ? ctx.lineTo(pp.x, pp.y) : ctx.moveTo(pp.x, pp.y); }); ctx.closePath(); ctx.stroke();
