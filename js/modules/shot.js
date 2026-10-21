@@ -720,7 +720,7 @@ function runGame(mode, set, rerender) {
       } else if (hand) {
         // поза, в которой рука ближе всего к точке сейва — ловушка ловит там, где шайба, а не выше или ниже
         const ppm0 = mpx * (body ? body.scale : 1);
-        const cands = (fly ? ['butterfly', 'padL', 'padR'] : ['stand', 'glove', 'blocker', 'q3r', 'q3r2', 'q3l', 'pushR', 'pushL']).filter(c => GOALIE_HANDS[c]);
+        const cands = (fly ? ['butterfly', 'padL', 'padR'] : ['stand', 'glove', 'blocker', 'q3r', 'q3r2', 'q3l', 'q3l2', 'pushR', 'pushL']).filter(c => GOALIE_HANDS[c]);
         let best = Infinity;
         for (const c of cands) {
           const [gx, gh] = GOALIE_HANDS[c][hand];
@@ -730,7 +730,8 @@ function runGame(mode, set, rerender) {
       } else if (moving !== 0 && gState !== 'готов') pose = moving > 0 ? 'pushR' : 'pushL';
       else if (!fly && lat > 50) pose = 'q3r2';
       else if (!fly && lat > 22) pose = 'q3r';
-      else if (!fly && lat < -22 && GOALIE_HANDS.q3l) pose = 'q3l'; // бросок слева: развёрнут влево (сильного варианта нет)
+      else if (!fly && lat < -50 && GOALIE_HANDS.q3l2) pose = 'q3l2'; // бросок слева под острым углом: сильно развёрнут влево
+      else if (!fly && lat < -22 && GOALIE_HANDS.q3l) pose = 'q3l';
       const img = goaliePoseImage(pose), M = META.goalie;
       // масштаб: пикселей на метр на глубине вратаря (как у модели), картинка — 300 единиц на метр
       const ppm = mpx * (body ? body.scale : 1), sc = ppm / GOALIE_UPM;
