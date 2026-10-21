@@ -9,6 +9,42 @@ import { buildQueue } from '../engine/srs.js';
 import { play } from './play.js';
 import { Pov } from '../engine/pov.js';
 import { viewWindow, RINKS } from '../engine/rink.js';
+import { fx } from '../core/fx.js';
+
+/* Часы тренажёров: идут только пока вкладка видна — после возврата ничего не перескакивает,
+   а время выбора не включает минуты, проведённые в другом приложении. Движение по кадрам — с шагом ≤ 50 мс. */
+const clock = (() => {
+  if (typeof document === 'undefined') return () => performance.now();
+  let paused = 0, hidAt = document.hidden ? performance.now() : 0;
+  document.addEventListener('visibilitychange', () => {
+    const n = performance.now();
+    if (document.hidden) hidAt = n; else if (hidAt) { paused += n - hidAt; hidAt = 0; }
+  });
+  return () => { const n = performance.now(); return n - paused - (hidAt ? n - hidAt : 0); };
+})();
+if (typeof window !== 'undefined') window.__hkDrillClock = clock;
+const MAX_DT = 0.05;
+/* Шаг кадра в секундах по часам тренажёров, не больше 50 мс. */
+const stepper = () => { let last = clock(); return () => { const n = clock(), dt = Math.min(MAX_DT, Math.max(0, (n - last) / 1000)); last = n; return dt; }; };
+
+/* «Авто»: время показа подстраивается под точность, а не под номер раунда.
+   Короче — после 3 верных из 4 подряд, длиннее — после двух промахов подряд. Уровень хранится по каждому тренажёру. */
+const AUTO_F = [1.45, 1.2, 1, 0.85, 0.72, 0.6, 0.5];
+const AUTO_START = 2;
+const autoState = id => ((state.profile.expoAuto || {})[id]) || { lvl: AUTO_START, h: [] };
+const autoF = id => AUTO_F[Math.max(0, Math.min(AUTO_F.length - 1, autoState(id).lvl))];
+/* Время показа, с: в «Авто» — base × уровень этого тренажёра, иначе выбранное вручную. */
+const exposure = (id, base, min = 0.6) => (expo() === 'auto' ? Math.max(min, +(base * autoF(id)).toFixed(2)) : expo());
+function autoUpdate(id, ok) {
+  if (expo() !== 'auto') return 0;
+  const all = { ...(state.profile.expoAuto || {}) }, cur = autoState(id);
+  let { lvl } = cur, hist = [...cur.h, ok ? 1 : 0].slice(-4), ch = 0;
+  if (hist.length >= 4 && hist.reduce((a, b) => a + b, 0) >= 3 && lvl < AUTO_F.length - 1) { lvl++; hist = []; ch = 1; }
+  else if (hist.length >= 2 && !hist[hist.length - 1] && !hist[hist.length - 2] && lvl > 0) { lvl--; hist = []; ch = -1; }
+  all[id] = { lvl, h: hist };
+  setProfile({ expoAuto: all });
+  return ch;
+}
 
 const DRILLS = [
   { id: 'shoulder', group: 'ice', name: 'Плечевой осмотр', line: 'Ты видишь лёд своими глазами. Пара секунд, чтобы оглянуться через плечо, — потом скажи, кто открыт.', rounds: 6 },
@@ -63,7 +99,7 @@ function start(d, rerender) {
     play(keys, { module: 'react:blitz', timer: 4, onDone: rerender });
     return;
   }
-  const root = h('div.play'), inner = h('div.play-in');
+  const root = h('div.play.drill'), inner = h('div.play-in');
   root.appendChild(inner); document.body.appendChild(root); document.body.style.overflow = 'hidden';
   const session = startSession('react:' + d.id);
   let ended = false, round = 0;
@@ -71,34 +107,41 @@ function start(d, rerender) {
   const close = () => { cancelAll(); live.on = false; if (!ended) { ended = true; finishSession(session); } root.remove(); document.body.style.overflow = ''; rerender(); };
   const live = { on: true };
   const top = () => h('div.play-top', h('button.x', { onclick: close }, icon('close')),
-    h('div.dots', Array.from({ length: d.rounds }, (_, k) => h('i', { class: k < marks.length ? marks[k] : k === marks.length ? 'now' : '' }))));
+    h('div.dots', Array.from({ length: d.rounds }, (_, k) => h('i', { class: k < marks.length ? marks[k] : k === marks.length ? 'now' : '' }))),
+    h('div.drill-phase', { 'aria-live': 'polite' }));
   /* Внимание по каждому раунду: фальстарты (касание до вопроса), время осмотра (до первого касания после вопроса,
      в «Плечевом осмотре» — до первого взгляда через плечо), время выбора (от вопроса до ответа). */
   const at = { phase: 'idle', allow: null, falseStarts: 0, t0: 0, askAt: 0, firstAt: 0, glances: 0, firstGlance: 0, warned: 0 };
   inner.addEventListener('pointerdown', e => {
     if (e.target.closest('.play-top')) return;
-    const now = performance.now();
+    const now = clock();
     if (at.phase === 'expose') {
       if (at.allow && e.target.closest(at.allow)) return;
-      at.falseStarts++;
+      at.falseStarts++; fx('false');
       if (now - at.warned > 1500) { at.warned = now; toast('Рано — сначала смотри'); }
     } else if (at.phase === 'ask' && !at.firstAt) at.firstAt = now;
   }, true);
-  const expose = (allow = null) => { at.phase = 'expose'; at.allow = allow; at.t0 = performance.now(); };
-  const ask = () => { at.phase = 'ask'; at.askAt = performance.now(); at.firstAt = 0; };
-  const glance = () => { at.glances++; if (!at.firstGlance) at.firstGlance = performance.now(); };
+  // видимое состояние раунда: show — смотри, answer — отвечай, feedback — разбор (чип в шапке и стили)
+  const phase = p => { inner.dataset.phase = p; };
+  const expose = (allow = null) => { at.phase = 'expose'; at.allow = allow; at.t0 = clock(); phase('show'); fx('start'); };
+  const ask = () => { at.phase = 'ask'; at.askAt = clock(); at.firstAt = 0; phase('answer'); };
+  const glance = () => { at.glances++; if (!at.firstGlance) at.firstGlance = clock(); };
   const log = (ok, extra = {}) => {
-    const now = performance.now();
+    const now = clock();
     const choiceMs = at.askAt ? Math.round(now - at.askAt) : null;
     const scanMs = d.id === 'shoulder' ? (at.firstGlance ? Math.round(at.firstGlance - at.t0) : null)
       : at.askAt && at.firstAt ? Math.round(at.firstAt - at.askAt) : choiceMs;
     const fs = at.falseStarts + (extra.foul ? 1 : 0);
-    at.phase = 'done';
+    at.phase = 'done'; phase('feedback');
     marks.push(ok ? 'best' : 'bad');
-    logItem(session, { drill: d.id, verdict: ok ? 'best' : 'bad', timeMs: choiceMs ?? 0, av: 1, choiceMs, scanMs, falseStarts: fs, ...(d.id === 'shoulder' ? { glances: at.glances } : {}), ...extra });
+    fx(ok ? 'best' : 'bad');
+    const expoS = expo() === 'auto' ? +autoF(d.id).toFixed(2) : expo();
+    logItem(session, { drill: d.id, verdict: ok ? 'best' : 'bad', timeMs: choiceMs ?? 0, av: 1, choiceMs, scanMs, falseStarts: fs, expoLevel: expoS, ...(d.id === 'shoulder' ? { glances: at.glances } : {}), ...extra });
+    const ch = autoUpdate(d.id, ok);
+    if (ch) toast(ch > 0 ? 'Три из четырёх верно — показ станет короче' : 'Два промаха подряд — показ станет длиннее');
   };
   const next = () => { round++; if (round >= d.rounds) finish(); else run(); };
-  const ctx = { inner, top, log, next, live, round: () => round, expose, ask, glance };
+  const ctx = { inner, top, log, next, live, round: () => round, expose, ask, glance, id: d.id, show: (base, min) => exposure(d.id, base, min), autoF: () => autoF(d.id) };
 
   function finish() {
     if (!ended) { ended = true; finishSession(session); }
@@ -110,10 +153,12 @@ function start(d, rerender) {
         h('div.big', fo.length ? `${Math.round(fo.reduce((a, b) => a + b, 0) / fo.length)}` : `${good}/${d.rounds}`),
         h('div.muted', fo.length ? `мс в среднем · лучшее ${Math.min(...fo)} мс` : 'верно'),
         attnLine(session.items),
+        expo() === 'auto' && !['faceoff', 'danger'].includes(d.id) ? h('p.muted.small.drill-expo', `Время показа в «Авто»: ×${autoF(d.id).toFixed(2).replace('.', ',')} от базового. Короче — после 3 верных из 4, длиннее — после двух промахов подряд.`) : null,
         h('div.row', { style: { marginTop: '28px' } }, h('button.btn.grow', { onclick: () => { close(); start(d, rerender); } }, 'Ещё раз'), h('button.btn.primary.grow', { onclick: close }, 'Готово'))));
   }
   const run = () => {
-    Object.assign(at, { phase: 'idle', allow: null, falseStarts: 0, t0: performance.now(), askAt: 0, firstAt: 0, glances: 0, firstGlance: 0 });
+    Object.assign(at, { phase: 'idle', allow: null, falseStarts: 0, t0: clock(), askAt: 0, firstAt: 0, glances: 0, firstGlance: 0 });
+    inner.dataset.phase = 'show';
     return ({ scan, memory, track, predict, faceoff, shoulder, mates, pressure, open, danger })[d.id](ctx);
   };
   run();
@@ -211,7 +256,7 @@ async function scan(c) {
   const pat = r < 2 && lib.scans.length ? lib.scans[(Math.random() * lib.scans.length) | 0] : genScan(r);
   const fr0 = pat.friends.map(x => freeness(x, pat.foes));
   pat.answer = fr0.indexOf(Math.max(...fr0));
-  const show = expo() === 'auto' ? Math.max(1.2, 3 - r * 0.2) : expo();
+  const show = c.show(2.6, 0.8);
   const card = { title: 'Открытый игрок', view: 'full', question: { kind: 'choice' }, options: [],
     us: pat.friends.map((f, i) => ({ id: 'f' + i, role: 'LW', label: f.label, x: f.x, y: f.y })),
     them: pat.foes.map((f, i) => ({ id: 'e' + i, role: 'F', x: f.x, y: f.y })) };
@@ -230,7 +275,6 @@ async function scan(c) {
   c.ask();
   title.textContent = 'Картинка исчезла. Где был свободный партнёр?';
   const box = h('div.opts');
-  const t0 = performance.now();
   pat.friends.forEach((f, i) => box.append(h('button.opt', { 'data-k': f.label, onclick: () => {
     box.classList.add('locked');
     const ok = i === pat.answer;
@@ -253,7 +297,7 @@ async function memory(c) {
   const card = clone(pick(trainCards())); // контрольные ситуации не показываем нигде, кроме среза
   for (const e of [...(card.us || []), ...(card.them || [])]) delete e.from;
   if (card.puck) delete card.puck.from;
-  const show = expo() === 'auto' ? Math.max(1.2, 3 - r * 0.25) : expo();
+  const show = c.show(2.6, 0.8);
   c.inner.innerHTML = '';
   c.inner.append(c.top(), h('div.q-meta', 'Память'), h('div.q', 'Запомни расстановку'));
   const wrap = h('div.rink-wrap'); c.inner.append(wrap);
@@ -308,7 +352,7 @@ async function memory(c) {
 async function track(c) {
   const r = c.round();
   const n = 7 + Math.min(3, Math.floor(r / 2)), targets = 3;
-  const speed = 0.16 + r * 0.035; // доля поля в секунду
+  const speed = 0.16 + 0.035 * Math.max(0, (1 / c.autoF() - 1) * 6 + 2); // доля поля в секунду: в «Авто» растёт с точностью, а не с номером раунда
   c.inner.innerHTML = '';
   const title = h('div.q', 'Запомни подсвеченные шайбы');
   c.inner.append(c.top(), h('div.q-meta', 'Слежение'), title);
@@ -342,9 +386,9 @@ async function track(c) {
   c.expose();
   mode = 'move'; title.textContent = 'Следи…';
   const v = speed * W;
-  let last = performance.now();
+  const dtOf = stepper();
   await tween(6000, (k) => {
-    const nowT = performance.now(), dt = Math.min(0.05, (nowT - last) / 1000); last = nowT; // реальное время кадра: одинаково на 60 и 120 Гц
+    const dt = dtOf(); // реальное время кадра (≤ 50 мс): одинаково на 60 и 120 Гц, после паузы не прыгает
     for (const p of pucks) {
       if (Math.random() < 0.02) { const a = Math.atan2(p.vy, p.vx) + rnd(-0.8, 0.8); p.vx = Math.cos(a); p.vy = Math.sin(a); }
       p.x += p.vx * v * dt; p.y += p.vy * v * dt;
@@ -362,6 +406,7 @@ async function track(c) {
     let best = null, bd = 1e9;
     for (const p of pucks) { const d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; best = p; } }
     if (!best || bd > R * 3) return;
+    fx('tap');
     if (picked.has(best)) picked.delete(best); else picked.add(best);
     draw();
     if (picked.size === targets) {
@@ -393,7 +438,7 @@ async function predict(c) {
     return path[n];
   };
   // вся траектория — показ и точка ответа через секунду после него — должна остаться на льду
-  const showS = expo() === 'auto' ? 1.2 : Math.max(0.8, expo() * 0.6);
+  const showS = expo() === 'auto' ? exposure('predict', 1.2, 0.6) : Math.max(0.8, expo() * 0.6);
   for (let t = 0; t <= showS + 1.001; t += 0.1) { const q = at(t); if (Math.abs(q.x) > 13 || q.y < 3 || q.y > 57) return predict(c); }
   const card = { title: 'Предсказание', view: 'full', us: [{ id: 'C', role: 'C', me: true, x: p1.x, y: p1.y }], them: [], question: { kind: 'tap' }, options: [] };
   c.inner.innerHTML = '';
@@ -441,25 +486,27 @@ async function faceoff(c) {
   let state = 'wait', tDrop = 0;
   const delay = rnd(1000, 3200);
   c.expose('.fo-pad'); // фальстарт по кругу считается отдельно — как нарушение
-  const timer = setTimeout(() => {
-    if (state !== 'wait') return;
+  let cancelled = false;
+  const timer = { clear: () => { cancelled = true; } };
+  wait(delay).then(() => {
+    if (cancelled || state !== 'wait' || !c.live.on) return;
     state = 'drop';
     pad.classList.add('drop');
     // отсчёт — с касания льда: конец анимации падения (transitionend), а не её начало
     const puck = pad.querySelector('.fo-puck');
-    const landed = () => { if (!tDrop) { tDrop = performance.now(); c.ask(); } };
+    const landed = () => { if (!tDrop) { tDrop = clock(); c.ask(); } };
     puck.addEventListener('transitionend', landed, { once: true });
     setTimeout(landed, 160); // страховка, если событие не придёт
-  }, delay);
+  });
   pad.onclick = () => {
     if (state === 'done') return;
     if (state === 'wait' || (state === 'drop' && !tDrop)) {
-      clearTimeout(timer); state = 'done';
+      timer.clear(); state = 'done';
       pad.classList.add('foul'); title.textContent = 'Рано! Судья выгнал с точки';
       c.log(false, { foul: true });
     } else {
       state = 'done';
-      const ms = Math.round(performance.now() - tDrop);
+      const ms = Math.round(clock() - tDrop);
       pad.classList.add('hit');
       title.textContent = `${ms} мс`;
       c.log(true, { timeMs: ms });
@@ -470,7 +517,6 @@ async function faceoff(c) {
 }
 
 /* ================= Хоккейное внимание ================= */
-const showTime = (r, base = 2.4) => (expo() === 'auto' ? Math.max(1.1, base - r * 0.15) : expo());
 const NSs = 'http://www.w3.org/2000/svg';
 const lineOn = (sc, a, b, cls = 'arrow a-skate') => { const ln = document.createElementNS(NSs, 'line'); Object.entries({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: cls }).forEach(([k, v]) => ln.setAttribute(k, v)); sc.lArrows.appendChild(ln); };
 const timerBar = async (c, sec) => {
@@ -508,15 +554,16 @@ async function shoulder(c) {
   const wrap = h('div.rink-wrap.pov-only'); c.inner.append(wrap);
   const sc = new Scene(wrap, card, { anim: false });
   let lastG = 0;
-  const pov = new Pov(wrap, sc, { onTurn: () => { const n = performance.now(); if (n - lastG > 800) c.glance(); lastG = n; } }); // взгляд = поворот головы; серия кадров одного поворота — один взгляд
+  const pov = new Pov(wrap, sc, { onTurn: () => { const n = clock(); if (n - lastG > 800) c.glance(); lastG = n; } }); // взгляд = поворот головы; серия кадров одного поворота — один взгляд
   pov.follow = false; pov.heading = 0;
   // все едут: каждый партнёр со своим опекуном — одной скоростью, так что «свободный» остаётся свободным,
   // но картинка за плечом через секунду уже другая
   const drift = friends.map(() => { const a = Math.random() * 7, v = rnd(0.8, 2.2); return { vx: Math.cos(a) * v, vy: Math.sin(a) * v }; });
-  const P0 = { f: friends.map(f => ({ ...f })), e: foes.map(o => ({ ...o })) }, T0 = performance.now();
+  const P0 = { f: friends.map(f => ({ ...f })), e: foes.map(o => ({ ...o })) }, dtOf = stepper();
+  let t = 0;
   const moveAll = () => {
     if (!pov.live) return;
-    const t = (performance.now() - T0) / 1000;
+    t += dtOf();
     friends.forEach((f, i) => {
       const nx = Math.max(-13, Math.min(13, P0.f[i].x + drift[i].vx * t)), ny = Math.max(4, Math.min(56, P0.f[i].y + drift[i].vy * t));
       const dx = nx - P0.f[i].x, dy = ny - P0.f[i].y;
@@ -533,7 +580,7 @@ async function shoulder(c) {
     h('button.btn.small', { onclick: () => pov.shoulder(1) }, 'Через правое ↷'));
   c.inner.append(bar);
   c.expose('.pov-cv, .pov-bar');
-  await timerBar(c, showTime(r, 3.6) + 0.8);
+  await timerBar(c, c.show(3.6, 1.6) + 0.8);
   if (!c.live.on) return;
   clearInterval(watch); pov.destroy(); bar.remove();
   { const fr = friends.map(f => Math.min(...foes.map(o => Math.min(Math.hypot(o.x - f.x, o.y - f.y), laneGap(f, o) * 1.5)))); answer = fr.indexOf(Math.max(...fr)); }
@@ -584,12 +631,13 @@ async function mates(c) {
   c.inner.append(c.top(), h('div.q-meta', 'Где партнёры'), title);
   const wrap = h('div.rink-wrap'); c.inner.append(wrap);
   const sc = new Scene(wrap, card, { anim: false });
-  const T0 = performance.now(), tNow = () => (performance.now() - T0) / 1000;
-  let run = true;
-  const step = () => { if (!run || !c.live.on) return; for (const m of moving) { const q = posAt(m, tNow()); sc.place(m.e.id, sc.pt(q)); } requestAnimationFrame(step); };
+  const dtOf = stepper();
+  let T = 0, run = true;
+  const tNow = () => T;
+  const step = () => { if (!run || !c.live.on) return; T += dtOf(); for (const m of moving) { const q = posAt(m, T); sc.place(m.e.id, sc.pt(q)); } requestAnimationFrame(step); };
   requestAnimationFrame(step);
   c.expose();
-  await timerBar(c, showTime(r, 2.8));
+  await timerBar(c, c.show(2.6, 0.9));
   if (!c.live.on) { run = false; return; }
   for (const e of card.us) if (!e.me && e.role !== 'G') sc.ents[e.id].node.style.opacity = 0;
   const tm = moving.find(m => m.e === target);
@@ -615,48 +663,80 @@ async function mates(c) {
   });
 }
 
-/* ---------- Откуда давят: соперник летит к тебе до приёма шайбы ---------- */
-const DIRS = { left: 'Слева', right: 'Справа', back: 'Сзади', front: 'Спереди' };
+/* ---------- Откуда давят: соперник летит к тебе до приёма шайбы ----------
+   Направление читается относительно КОРПУСА, а не экрана: с 3-го раунда ты развёрнут куда угодно
+   (к своим воротам, к борту, вполоборота), и «справа на экране» может оказаться «в спину».
+   Ответы: спереди, слева, справа, в спину; с 4-го раунда ещё «за левым / за правым плечом». */
+const DIRS = { front: 'Спереди', left: 'Слева', right: 'Справа', back: 'В спину', backL: 'За левым плечом', backR: 'За правым плечом' };
+const REL = { front: 0, left: -Math.PI / 2, right: Math.PI / 2, back: Math.PI, backL: -Math.PI * 0.75, backR: Math.PI * 0.75 };
 const DIR_TIP = {
+  front: 'Давят спереди — защити шайбу корпусом и отдай назад или в сторону, к поддержке.',
   left: 'Давят слева — принимай шайбу справа от корпуса и уводи вправо, плечо к сопернику.',
   right: 'Давят справа — принимай шайбу слева от корпуса и уходи влево, закрывая её телом.',
-  back: 'Давят сзади — не останавливайся: первым касанием в свободное место или отдай в касание.',
-  front: 'Давят спереди — защити шайбу корпусом и отдай назад или в сторону, к поддержке.',
+  back: 'Давят в спину — не останавливайся: первым касанием в свободное место или отдай в касание.',
+  backL: 'Давят из-за левого плеча — первым касанием уводи шайбу вправо-вперёд, корпус между ним и шайбой.',
+  backR: 'Давят из-за правого плеча — первым касанием уводи шайбу влево-вперёд, закрываясь корпусом.',
+};
+const FACING = [[0, 'вверх по площадке, в атаку'], [Math.PI, 'к своим воротам'], [Math.PI / 2, 'к правому борту'], [-Math.PI / 2, 'к левому борту'],
+  [Math.PI / 4, 'вверх, к правому борту'], [-Math.PI / 4, 'вверх, к левому борту'], [Math.PI * 0.75, 'к своим воротам и правому борту'], [-Math.PI * 0.75, 'к своим воротам и левому борту']];
+const screenWord = a => { // где это на экране (атака вверх): для разбора «на экране — одно, относительно тебя — другое»
+  const d = ((a % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
+  return Math.abs(d) < Math.PI / 4 ? 'сверху' : Math.abs(d) > Math.PI * 0.75 ? 'снизу' : d > 0 ? 'справа' : 'слева';
 };
 async function pressure(c) {
   const r = c.round();
-  const me = { x: rnd(-6, 6), y: rnd(16, 42) };
-  const dir = pick(Object.keys(DIRS));
-  const base = { left: -Math.PI / 2, right: Math.PI / 2, back: Math.PI, front: 0 }[dir] + rnd(-0.45, 0.45);
+  const me = { x: rnd(-5, 5), y: rnd(18, 40) };
+  // первые два раунда — лицом в атаку (знакомство), дальше корпус развёрнут как угодно
+  const [H, faceTxt] = r < 2 ? FACING[0] : pick(FACING);
+  const keys = r >= 3 ? ['front', 'left', 'right', 'back', 'backL', 'backR'] : ['front', 'left', 'right', 'back'];
+  const dir = pick(keys);
+  const wa = H + REL[dir] + rnd(-0.22, 0.22); // мировой угол прихода давления (0 — вверх, по часовой)
   const at = (a, d) => ({ x: Math.max(-13.5, Math.min(13.5, me.x + Math.sin(a) * d)), y: Math.max(3, Math.min(57, me.y + Math.cos(a) * d)) });
-  const end = at(base, rnd(3, 4)), start = at(base, rnd(9, 11));
-  const decoys = [at(base + Math.PI + rnd(-0.9, 0.9), rnd(9, 12)), at(base + pick([-1, 1]) * rnd(1.6, 2.2), rnd(10, 13))];
-  const passer = at(pick([Math.PI * 0.75, -Math.PI * 0.75, Math.PI]), rnd(10, 13));
+  const end = at(wa, rnd(3, 4)), start = at(wa, rnd(9, 11));
+  const decoys = [at(wa + Math.PI + rnd(-0.6, 0.6), rnd(10, 13)), at(wa + pick([-1, 1]) * rnd(1.9, 2.4), rnd(11, 14))];
+  // пас приходит из-за спины или сбоку — относительно корпуса
+  const passer = at(H + pick([Math.PI * 0.7, -Math.PI * 0.7, Math.PI]) + rnd(-0.2, 0.2), rnd(10, 13));
   const card = { title: 'Давление', view: 'full', question: { kind: 'choice' }, options: [],
-    us: [{ id: 'C', role: 'C', me: true, ...me }, { id: 'LD', role: 'LD', ...passer }],
+    us: [{ id: 'C', role: 'C', me: true, ...me, face: [Math.sin(H), Math.cos(H)] }, { id: 'LD', role: 'LD', ...passer }],
     them: [{ id: 'p', role: 'F', ...end, from: [start.x, start.y] }, ...decoys.map((d, i) => ({ id: 'd' + i, role: 'F', ...d, from: [d.x + rnd(-1, 1), d.y + rnd(-1, 1)] }))],
     puck: { x: me.x, y: me.y, from: [passer.x, passer.y] } };
   c.inner.innerHTML = '';
   const title = h('div.q', 'Шайба идёт к тебе. Смотри вокруг');
-  c.inner.append(c.top(), h('div.q-meta', 'Откуда давят'), title, h('p.muted.small', 'Ты смотришь вверх по площадке, в атаку.'));
+  c.inner.append(c.top(), h('div.q-meta', 'Откуда давят'), title,
+    h('p.muted.small.drill-face', h('b', 'Ты развёрнут ' + faceTxt + '. '), 'Отвечай относительно своего корпуса (голубая стрелка), а не экрана.'));
   const wrap = h('div.rink-wrap'); c.inner.append(wrap);
   const sc = new Scene(wrap, card, { anim: true });
-  const speedUp = Math.max(0.6, 1.2 - r * 0.08);
+  // стрелка «куда смотрит корпус»
+  { // поверх фишек: от кольца «Я» на 6 м вперёд, с наконечником
+    const u = { x: Math.sin(H), y: Math.cos(H) }, w = { x: u.y, y: -u.x };
+    const P = k => sc.pt({ x: me.x + u.x * k, y: me.y + u.y * k });
+    const a0 = P(1.9), a1 = P(6.2), tip = P(7.3);
+    const side = s2 => sc.pt({ x: me.x + u.x * 6.2 + w.x * s2, y: me.y + u.y * 6.2 + w.y * s2 });
+    const g = document.createElementNS(NSs, 'g'); g.setAttribute('class', 'drill-facing-g');
+    const ln = document.createElementNS(NSs, 'line'); Object.entries({ x1: a0.x, y1: a0.y, x2: a1.x, y2: a1.y, class: 'arrow drill-facing' }).forEach(([k, v]) => ln.setAttribute(k, v));
+    const hd = document.createElementNS(NSs, 'path'); const l = side(0.9), r2 = side(-0.9);
+    hd.setAttribute('d', `M${tip.x} ${tip.y} L${l.x} ${l.y} L${r2.x} ${r2.y} Z`); hd.setAttribute('class', 'drill-facing-head');
+    g.append(ln, hd); sc.lFx.appendChild(g);
+  }
   c.expose();
-  sc.intro(); await wait(1500 * speedUp);
+  sc.intro(); await wait(Math.round(c.show(1.5, 0.7) * 1000));
   if (!c.live.on) return;
   sc.svg.style.opacity = 0.05;
-  title.textContent = 'Откуда давит соперник?';
-  const box = h('div.opts');
+  title.textContent = 'Откуда давит соперник — относительно тебя?';
+  const box = h('div.opts.drill-dirs' + (keys.length > 4 ? '.six' : ''));
   c.ask();
-  for (const k of ['left', 'right', 'back', 'front']) box.append(h('button.opt', { onclick: e => {
+  for (const k of keys) box.append(h('button.opt', { onclick: e => {
     box.classList.add('locked');
     const ok = k === dir;
     e.currentTarget.classList.add(ok ? 'v-best' : 'v-bad');
-    [...box.children][['left', 'right', 'back', 'front'].indexOf(dir)].classList.add('v-best');
+    [...box.children][keys.indexOf(dir)].classList.add('v-best');
     sc.svg.style.opacity = 1;
-    c.log(ok, { dir });
-    c.inner.append(h('p.explain', (ok ? '' : `Давили: ${DIRS[dir].toLowerCase()}. `) + DIR_TIP[dir]));
+    lineOn(sc, sc.pt(start), sc.pt(end), 'arrow a-shot');
+    c.log(ok, { dir, facing: +H.toFixed(2) });
+    const scr = screenWord(wa), same = { front: 'сверху', back: 'снизу', left: 'слева', right: 'справа' }[dir] === scr;
+    c.inner.append(h('p.explain', (ok ? '' : `Давили: ${DIRS[dir].toLowerCase()}. `)
+      + (r >= 2 && !same ? `На экране он ${scr}, но ты развёрнут ${faceTxt} — для тебя это «${DIRS[dir].toLowerCase()}». ` : '')
+      + DIR_TIP[dir]));
     nextBtn(c, () => sc.destroy());
   } }, DIRS[k]));
   c.inner.append(box);
@@ -716,7 +796,7 @@ async function open(c) {
   c.expose();
   await sc.intro();
   if (!c.live.on) return;
-  await wait(Math.max(150, 700 - r * 80));
+  await wait(Math.round(c.show(0.6, 0.15) * 1000));
   sc.svg.style.opacity = 0.05;
   title.textContent = 'Кому можно отдать прямо сейчас?';
   const box = h('div.opts');
@@ -737,60 +817,109 @@ async function open(c) {
   c.inner.append(box);
 }
 
-/* ---------- Самый опасный: своя зона, найди главную угрозу ---------- */
+/* ---------- Самый опасный: своя зона, найди главную угрозу ----------
+   Угроза складывается из факторов, каждый виден на льду:
+   • близость и угол к воротам; • опека (до ближайшего нашего);
+   • линия паса от шайбы — открыта или её перекрывает наш игрок;
+   • куда развёрнут — к воротам/шайбе (готов бросать) или спиной;
+   • скорость сближения с воротами (едет в слот или от него). У владельца шайбы опасность чуть ниже: забивают обычно те, кому отдают. */
 const NET = { x: 0, y: 4 };
-function threat(o, ours, puck) {
+const DZ_LANE = 1.3;
+function threatInfo(o, ours, puck) {
   const dn = Math.hypot(o.x - NET.x, o.y - NET.y);
   const ang = Math.abs(Math.atan2(o.x, o.y - NET.y)); // 0 — прямо перед воротами
   const free = Math.min(...ours.map(p => Math.hypot(p.x - o.x, p.y - o.y)));
   const hasPuck = Math.hypot(puck.x - o.x, puck.y - o.y) < 1.2;
-  return (12 / Math.max(3, dn)) * Math.max(0.2, Math.cos(ang)) * Math.min(1.6, free / 2.5) * (hasPuck ? 0.75 : 1);
+  const lane = hasPuck ? Infinity : Math.min(...ours.map(p => segGap(puck, o, p)));
+  const blocked = lane < DZ_LANE;
+  // ориентация: косинус между «куда смотрит» и направлением на ворота (или на шайбу — кто ждёт паса)
+  const toNet = { x: NET.x - o.x, y: NET.y - o.y }, toPuck = { x: puck.x - o.x, y: puck.y - o.y };
+  const cosTo = v => (o.fx * v.x + o.fy * v.y) / (Math.hypot(v.x, v.y) || 1);
+  const facing = Math.max(cosTo(toNet), hasPuck ? -1 : cosTo(toPuck));
+  // сближение: на сколько м/с сокращается расстояние до ворот
+  const closing = dn - Math.hypot(o.x + o.vx - NET.x, o.y + o.vy - NET.y);
+  const f = {
+    base: (12 / Math.max(3, dn)) * Math.max(0.2, Math.cos(ang)),
+    mark: Math.min(1.6, free / 2.5),
+    lane: blocked ? 0.55 : 1,
+    face: facing > 0.3 ? 1.15 : facing < -0.3 ? 0.72 : 0.95,
+    speed: 1 + 0.12 * Math.max(-3, Math.min(4, closing)),
+    puck: hasPuck ? 0.75 : 1,
+  };
+  const score = f.base * f.mark * f.lane * f.face * f.speed * f.puck;
+  return { score, dn, free, blocked, facing, closing, hasPuck };
 }
+const threat = (o, ours, puck) => threatInfo(o, ours, puck).score;
+const threatWords = t => [
+  `до ворот ${t.dn.toFixed(0)} м`,
+  t.hasPuck ? 'с шайбой' : t.blocked ? 'линия паса перекрыта' : 'линия паса открыта',
+  `опека ${t.free.toFixed(1)} м`,
+  t.facing > 0.3 ? 'развёрнут к воротам' : t.facing < -0.3 ? 'спиной к воротам' : 'вполоборота',
+  t.closing > 0.6 ? `едет к воротам ${t.closing.toFixed(1)} м/с` : t.closing < -0.6 ? 'уезжает от ворот' : 'на месте',
+].join(', ');
 async function danger(c) {
   const r = c.round();
-  let them, ours, puck, ans;
-  for (let k = 0; k < 300; k++) {
+  let them, ours, puck, ans, info;
+  for (let k = 0; k < 400; k++) {
     const carrier = { x: pick([-1, 1]) * rnd(9, 12.5), y: rnd(6, 13) };
-    const slot = { x: rnd(-3, 3), y: rnd(8, 12) };
+    const slot = { x: rnd(-3, 3), y: rnd(8, 13) };
     const point = { x: rnd(-8, 8), y: rnd(19, 22) };
     const wide = { x: -Math.sign(carrier.x) * rnd(8, 11), y: rnd(9, 16) };
-    them = [carrier, slot, point, wide];
-    puck = { x: carrier.x - Math.sign(carrier.x) * 0.7, y: carrier.y + 0.5 };
-    // свои: кто-то у владельца, у дальнего, у синей; одного соперника иногда опекаем плотно
+    them = [carrier, slot, point, wide].map(o => {
+      // скорость (м/с) и разворот: кто-то въезжает в слот, кто-то стоит, кто-то уезжает; смотрят на шайбу, на ворота или в сторону
+      const go = Math.random(), toN = Math.atan2(NET.x - o.x, NET.y - o.y);
+      const va = go < 0.45 ? toN + rnd(-0.4, 0.4) : go < 0.75 ? rnd(-Math.PI, Math.PI) : toN + Math.PI + rnd(-0.5, 0.5);
+      const v = go < 0.45 ? rnd(1.5, 4) : go < 0.75 ? rnd(0, 0.6) : rnd(1, 2.5);
+      const fa = Math.random() < 0.6 ? toN + rnd(-0.4, 0.4) : rnd(-Math.PI, Math.PI);
+      return { ...o, vx: Math.sin(va) * v, vy: Math.cos(va) * v, fx: Math.sin(fa), fy: Math.cos(fa) };
+    });
+    them[0].vx = 0; them[0].vy = rnd(-0.5, 0.5);
+    puck = { x: them[0].x - Math.sign(them[0].x) * 0.7, y: them[0].y + 0.5 };
+    { const toP = Math.atan2(puck.x - them[0].x, puck.y - them[0].y); them[0].fx = Math.sin(toP); them[0].fy = Math.cos(toP); }
     const markSlot = Math.random() < 0.5;
     ours = [
-      { x: carrier.x - Math.sign(carrier.x) * 1.4, y: carrier.y - 0.8 },
-      markSlot ? { x: slot.x + rnd(-0.8, 0.8), y: slot.y - 1.2 } : { x: rnd(-2, 2), y: rnd(5, 6.5) },
+      { x: them[0].x - Math.sign(them[0].x) * 1.4, y: them[0].y - 0.8 },
+      markSlot ? { x: slot.x + rnd(-0.8, 0.8), y: slot.y - 1.2 } : { x: pick([-1, 1]) * rnd(2.2, 3.2), y: rnd(6.5, 8) },
       { x: point.x + rnd(-3, 3) * (r < 3 ? 1.5 : 1), y: point.y - rnd(2, 4) },
       markSlot ? { x: wide.x * 0.6, y: wide.y - 3 } : { x: wide.x + Math.sign(-wide.x) * rnd(4, 6), y: wide.y },
     ];
-    const sc = them.map(o => threat(o, ours, puck));
-    const order = [...sc].sort((a, b) => b - a);
+    info = them.map(o => threatInfo(o, ours, puck));
+    const sc = info.map(x => x.score), order = [...sc].sort((a, b) => b - a);
     ans = sc.indexOf(order[0]);
     if (order[0] - order[1] > (r < 3 ? 0.9 : 0.5)) break;
   }
+  const SHOW = 1.0; // с — сколько видно движение: позиции в стоп-кадре — через секунду после «from»
   const card = { title: 'Угроза', view: 'dz', question: { kind: 'tap' }, options: [],
     us: [{ id: 'C', role: 'C', me: true, x: ours[1].x, y: ours[1].y }, { id: 'LD', role: 'LD', ...ours[0] }, { id: 'RW', role: 'RW', ...ours[2] }, { id: 'RD', role: 'RD', ...ours[3] }, { id: 'G', role: 'G', x: 0, y: 4.9 }],
-    them: them.map((o, i) => ({ id: 'e' + i, role: 'F', x: o.x, y: o.y })), puck };
+    them: them.map((o, i) => ({ id: 'e' + i, role: 'F', x: o.x, y: o.y, face: [o.fx, o.fy], from: [o.x - o.vx * SHOW, o.y - o.vy * SHOW] })), puck };
   c.inner.innerHTML = '';
-  const title = h('div.q', 'Нажми на самого опасного соперника');
+  const title = h('div.q', 'Смотри, кто куда едет и куда развёрнут');
   c.inner.append(c.top(), h('div.q-meta', 'Самый опасный'), title);
   const wrap = h('div.rink-wrap'); c.inner.append(wrap);
-  const sc = new Scene(wrap, card, { anim: false });
-  const t0 = performance.now();
+  const sc = new Scene(wrap, card, { anim: true });
+  c.expose();
+  await sc.intro();
+  if (!c.live.on) return;
+  title.textContent = 'Нажми на самого опасного соперника';
   c.ask();
+  const t0 = clock();
   sc.onTap(p => {
     let best = 0, bd = 1e9;
     them.forEach((o, i) => { const d = Math.hypot(o.x - p.x, o.y - p.y); if (d < bd) { bd = d; best = i; } });
     if (bd > 4) return;
     sc.offTap();
-    const ok = best === ans, ms = Math.round(performance.now() - t0);
+    const ok = best === ans, ms = Math.round(clock() - t0);
     sc.ents['e' + ans].node.classList.add('hot');
+    if (!ok) sc.ents['e' + best].node.classList.add('picked-wrong');
+    // линии паса от шайбы к каждому сопернику без шайбы: зелёная — открыта, красная — перекрыта нашим
+    them.forEach((o, i) => { if (i) lineOn(sc, sc.pt(puck), sc.pt(o), info[i].blocked ? 'lane lane-bad' : i === ans ? 'lane lane-ok' : 'lane'); });
     c.log(ok, { timeMs: ms, slow: ms >= 6000 }); // правильность и время — отдельно
-    const o = them[ans], free = Math.min(...ours.map(q => Math.hypot(q.x - o.x, q.y - o.y)));
     title.textContent = ok ? `Верно · ${(ms / 1000).toFixed(1)} с${ms >= 6000 ? ' — верно, но долго' : ''}` : 'Не он';
-    c.inner.append(h('p.explain', ans === 0 ? 'Опаснее всех тот, у кого шайба: он близко к воротам и под хорошим углом.'
-      : `Главная угроза — соперник ${o.y < 13 && Math.abs(o.x) < 4 ? 'в слоте' : 'без опеки'}: до ближайшего нашего ${free.toFixed(1)} м, ворота рядом. Шайба у борта не забивает — забивает тот, кому её отдадут.`));
+    const name = i => (i === 0 ? 'с шайбой' : them[i].y < 14 && Math.abs(them[i].x) < 4 ? 'в слоте' : them[i].y > 17 ? 'у синей' : 'на дальнем фланге');
+    c.inner.append(h('div.drill-factors',
+      h('p', h('b', `Главная угроза — ${name(ans)}: `), threatWords(info[ans]) + '.'),
+      ok ? null : h('p', h('b', `Ты выбрал — ${name(best)}: `), threatWords(info[best]) + '.'),
+      h('p.muted.small', 'Опасен тот, кто близко и под углом, без опеки, к кому открыта линия паса, кто развёрнут к воротам и въезжает в слот. Шайба у борта не забивает — забивает тот, кому её отдадут.')));
     nextBtn(c, () => sc.destroy());
   });
 }

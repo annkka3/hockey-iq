@@ -1,1 +1,32 @@
-/* drills — стили этого раздела */
+/* drills — тренажёры внимания: состояние раунда, стрелка корпуса, факторы угрозы */
+
+/* Чип состояния раунда в шапке: «Смотри» → «Отвечай» → «Разбор» */
+.drill .play-top { position: relative; }
+.drill-phase { margin-left: auto; min-width: 74px; padding: 5px 10px; border-radius: 999px; text-align: center;
+  font: 800 11px/1 Unbounded, sans-serif; letter-spacing: .06em; text-transform: uppercase;
+  background: rgba(51, 200, 234, .12); color: #33C8EA; border: 1px solid rgba(51, 200, 234, .35); transition: background .2s, color .2s; }
+.drill-phase:empty::after { content: ''; }
+.drill .play-in[data-phase="show"] .drill-phase::after { content: 'Смотри'; }
+.drill .play-in[data-phase="answer"] .drill-phase::after { content: 'Отвечай'; }
+.drill .play-in[data-phase="feedback"] .drill-phase::after { content: 'Разбор'; }
+.drill .play-in[data-phase="answer"] .drill-phase { background: #33C8EA; color: #061220; border-color: #33C8EA; }
+.drill .play-in[data-phase="feedback"] .drill-phase { background: rgba(255, 255, 255, .06); color: rgba(255, 255, 255, .7); border-color: rgba(255, 255, 255, .18); }
+/* во время показа схема в рамке-подсветке, во время ответа — приглушена (картинка уже исчезла) */
+.drill .play-in[data-phase="show"] .rink-wrap { box-shadow: 0 0 0 2px rgba(51, 200, 234, .55), 0 0 22px rgba(51, 200, 234, .18); }
+.drill .play-in[data-phase="answer"] .q { color: #fff; }
+
+/* «Откуда давят»: стрелка, куда развёрнут корпус */
+.arrow.drill-facing { stroke: #0AA4CC; stroke-width: .42; stroke-linecap: round; opacity: .95; }
+.drill-facing-head { fill: #0AA4CC; }
+.drill-facing-g { pointer-events: none; }
+.drill-face b { color: #33C8EA; font-weight: 700; }
+.opts.drill-dirs.six { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.opts.drill-dirs.six .opt { margin: 0; }
+
+/* «Самый опасный»: разбор по факторам */
+.drill-factors { margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: var(--panel, #0F2236); border-left: 3px solid #33C8EA; }
+.drill-factors p { margin: 0 0 6px; font-size: 14px; line-height: 1.45; }
+.drill-factors p:last-child { margin-bottom: 0; }
+.ent.picked-wrong .body { stroke: #FF4D6A; stroke-width: .16; }
+
+.drill-expo { margin-top: 10px; text-align: center; }
