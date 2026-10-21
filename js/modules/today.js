@@ -93,8 +93,8 @@ export function render(view, rerender) {
   const f = window.HK_CONFIG.features;
   view.append(h('div.h2', f.shot && f.react ? 'Ещё тренировки' : 'Скоро'),
     h('div.tiles',
-      tile('Бросок', 'Геометрия и игра свайпом', f.shot ? null : 'v0.2', shotArt(), () => { location.hash = '#/shot'; }),
-      tile('Реакция', 'Память, скорость, внимание', f.react ? null : 'v0.3', reactArt(), () => { location.hash = '#/react'; })));
+      tile('Бросок', 'Угол, вратарь, протяжка, добивание', f.shot ? null : 'выключено', shotArt(), () => { location.hash = '#/shot'; }),
+      tile('Реакция', 'Осмотр, внимание, память, скорость', f.react ? null : 'выключено', reactArt(), () => { location.hash = '#/react'; })));
 }
 
 const dayIndex = () => Math.floor(new Date(today() + 'T12:00:00').getTime() / 864e5);

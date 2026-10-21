@@ -8,7 +8,7 @@ const MAX_SESSIONS = 400;
 
 const blank = () => ({
   v: 1,
-  profile: { nick: '', position: 'C', hand: 'L', rink: 'iihf', anim: true },
+  profile: { nick: '', position: 'C', hand: 'L', rink: 'iihf', anim: true, sound: true, haptics: true, favs: [] },
   progress: {},          // ключ карточки → запись повторения
   sessions: [],          // журнал: { id, day, module, startedAt, durationSec, items: [...] }
   parent: { pinHash: null, message: null, goal: null },
@@ -50,6 +50,15 @@ export function setProfile(patch) {
   Object.assign(state.profile, patch);
   dirty.profile = true;
   save();
+}
+
+/* Избранные карточки (id) — в профиле, поэтому синхронизируются вместе с ним. */
+export const isFav = id => (state.profile.favs || []).includes(id);
+export function toggleFav(id) {
+  const f = new Set(state.profile.favs || []);
+  if (f.has(id)) f.delete(id); else f.add(id);
+  setProfile({ favs: [...f] });
+  return f.has(id);
 }
 
 export function setParent(patch) {

@@ -3,7 +3,8 @@ import { attentionPanel } from './react.js';
 import { h, meter, svg, toast } from '../ui.js';
 import { lib } from '../content.js';
 import { state, setProfile } from '../core/state.js';
-import { summarize, accuracyBy, medianTime, readRate } from '../engine/scoring.js';
+import { summarize, accuracyBy, medianTime, readingTrend, confidence } from '../engine/scoring.js';
+import { fx } from '../core/fx.js';
 import { RINKS } from '../engine/rink.js';
 import { syncStatus } from '../core/sync.js';
 import * as cards from './cards.js';
@@ -28,13 +29,8 @@ export function render(view, rerender, cloud) {
         h('div', h('b', med ? (med / 1000).toFixed(1) + ' с' : '—'), h('span', 'на верное решение')))));
 
 
-  {
-    const rr = readRate(state.sessions);
-    if (rr.n) view.append(h('div.panel', { style: { marginTop: '12px' } },
-      h('div.row', h('div.grow', h('b', 'Предугадывание'), h('div.muted.small', 'Верные прогнозы в шаге «Предскажи» за 30 дней')),
-        h('div', { style: { fontFamily: 'var(--display)', fontWeight: 800, fontSize: '22px', color: 'var(--cyan)' } }, Math.round(rr.rate * 100) + '%')),
-      meter(rr.rate), h('div.muted.small', { style: { marginTop: '6px' } }, `${rr.ok} из ${rr.n}`)));
-  }
+  { const rp = readingPanel(state.sessions); if (rp) view.append(rp); }
+  { const cp = confidencePanel(state.sessions); if (cp) view.append(cp); }
   { const ap = attentionPanel(state.sessions); if (ap) view.append(ap); }
   onice.playerPanel(view, rerender);
 
@@ -66,13 +62,48 @@ export function render(view, rerender, cloud) {
       field('Имя или ник', h('input.input', { value: p.nick, maxlength: 20, placeholder: 'Как подписать', onchange: e => { setProfile({ nick: e.target.value.trim() }); rerender(); } })),
       field('Хват', toggle([['L', 'Левый'], ['R', 'Правый']], p.hand, v => setProfile({ hand: v }), rerender)),
       field('Площадка', toggle(Object.values(RINKS).map(r => [r.id, r.name]), p.rink, v => setProfile({ rink: v }), rerender)),
-      field('Анимации', toggle([[true, 'Вкл'], [false, 'Выкл']], p.anim, v => setProfile({ anim: v }), rerender))));
+      field('Анимации', toggle([[true, 'Вкл'], [false, 'Выкл']], p.anim, v => setProfile({ anim: v }), rerender)),
+      field('Звук', toggle([[true, 'Вкл'], [false, 'Выкл']], p.sound !== false, v => { setProfile({ sound: v }); if (v) fx('best'); }, rerender)),
+      field('Вибрация', toggle([[true, 'Вкл'], [false, 'Выкл']], p.haptics !== false, v => { setProfile({ haptics: v }); if (v) fx('tap'); }, rerender))));
 
   view.append(h('div.h2', 'Аккаунт'), account(cloud, rerender));
 
   view.append(h('div', { style: { marginTop: '22px' } },
     h('button.btn.block', { onclick: () => { location.hash = '#/parent'; } }, 'Для родителей')));
-  view.append(h('p.muted.small', { style: { textAlign: 'center', marginTop: '18px' } }, `Hockey IQ v0.1 · контент ${lib.built}`));
+  view.append(h('p.muted.small', { style: { textAlign: 'center', marginTop: '18px' } }, `Hockey IQ · сборка контента ${lib.built}`));
+}
+
+const pct = x => Math.round(x * 100) + '%';
+const big = (text, color = 'var(--cyan)') => h('div', { style: { fontFamily: 'var(--display)', fontWeight: 800, fontSize: '22px', color } }, text);
+
+/* «Чтение игры»: доля верных прогнозов («Предскажи») по неделям + «Почему». Экспортируется — им пользуется и экран родителя. */
+export function readingPanel(sessions) {
+  const r = readingTrend(sessions);
+  if (!r.n) return null;
+  const max = 1;
+  const trendTxt = r.trend == null ? 'Мало данных для тренда — нужно по 4 прогноза за две недели.'
+    : r.trend > 0.04 ? `Растёт: +${Math.round(r.trend * 100)} п. п. за последние две недели.`
+    : r.trend < -0.04 ? `Просело: ${Math.round(r.trend * 100)} п. п. за последние две недели.` : 'Держится на одном уровне.';
+  return h('div.panel.metric', { style: { marginTop: '12px' } },
+    h('div.row', h('div.grow', h('b', 'Чтение игры'), h('div.muted.small', 'Верные прогнозы в шаге «Предскажи» — видит ли, что будет дальше')), big(pct(r.rate))),
+    h('div.wk-bars', r.weeks.map((w, i) => h('div.wk', { title: w.n ? `${w.ok} из ${w.n}` : 'нет ответов' },
+      h('div.wk-col', h('div.wk-fill', { style: { height: w.rate == null ? '0' : Math.max(4, w.rate / max * 100) + '%' }, class: w.rate == null ? 'empty' : '' })),
+      h('span', i === r.weeks.length - 1 ? 'эта' : `−${r.weeks.length - 1 - i}`)))),
+    h('div.muted.small', { style: { marginTop: '6px' } }, `${r.weeks.reduce((a, w) => a + w.ok, 0)} из ${r.n} за 6 недель. ${trendTxt}`),
+    r.whyN ? h('div.muted.small', `«Почему?» — верно ${pct(r.whyRate)} (${r.whyN})`) : null);
+}
+
+/* «Уверенность»: совпадает ли скорость ответа с качеством. Четыре клетки и вывод простыми словами. */
+export function confidencePanel(sessions) {
+  const c = confidence(sessions);
+  if (!c.label) return c.n ? h('div.panel.metric', { style: { marginTop: '12px' } }, h('b', 'Уверенность'), h('div.muted.small', `Появится после 8 решений с замером времени (сейчас ${c.n}).`)) : null;
+  const cell = (n, title, cls) => h('div.cf-cell.' + cls, h('b', n), h('span', title));
+  return h('div.panel.metric', { style: { marginTop: '12px' } },
+    h('div.row', h('div.grow', h('b', 'Уверенность'), h('div.muted.small', `Быстро — быстрее ${(c.cut / 1000).toFixed(1)} с, его обычного времени`)), big(c.label, 'var(--text)')),
+    h('div.cf-grid',
+      cell(c.fastRight, 'быстро и верно', 'good'), cell(c.slowRight, 'долго, но верно', 'mid'),
+      cell(c.fastWrong, 'быстро и неверно', 'warn'), cell(c.slowWrong, 'долго и неверно', 'bad')),
+    h('div.muted.small', { style: { marginTop: '8px' } }, c.text));
 }
 
 function jersey(nick) {

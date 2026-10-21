@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import * as ST from '../js/engine/stick.js';
 import * as P from '../js/engine/shot.js';
+import * as SRS from '../js/engine/srs.js';
+import * as SC from '../js/engine/scoring.js';
+import * as SIM from '../js/engine/sim.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0, fail = 0;
@@ -118,6 +121,94 @@ t('игроки на площадке', () => {
 t('действия в карточках — из допустимого списка', () => {
   const A = ['ready', 'carry', 'receive', 'pass', 'shot', 'block'];
   for (const c of content.cards) for (const e of [...(c.us || []), ...(c.them || [])]) if (e.action) ok(A.includes(e.action), `${c.id}/${e.id}: ${e.action}`);
+});
+
+/* ---------- интервальное повторение ---------- */
+t('SRS: лучшее — ящик вверх, интервал растёт', () => {
+  const day0 = new Date('2026-01-10T12:00:00').getTime();
+  let r = SRS.review(undefined, 'best', day0);
+  ok(r.box === 1 && r.due === SRS.addDays('2026-01-10', SRS.INTERVALS[1]), 'первый ящик');
+  r = SRS.review(r, 'best', day0); r = SRS.review(r, 'best', day0);
+  ok(r.box === 3 && r.due === SRS.addDays('2026-01-10', SRS.INTERVALS[3]), 'третий ящик');
+  ok(SRS.isLearned(r), 'выучена с ящика 3');
+});
+t('SRS: ошибка — ящик 1 и срыв; «можно» держит', () => {
+  let r = { box: 4, lapses: 0 };
+  r = SRS.review(r, 'ok'); ok(r.box === 4, '«можно» не роняет');
+  r = SRS.review(r, 'bad'); ok(r.box === 1 && r.lapses === 1, 'ошибка');
+  ok(r.h2.endsWith('~x'), 'история');
+});
+t('SRS: застрявшая — 2 ошибки из 3 последних или 3 срыва', () => {
+  ok(SRS.isStuck({ h2: '++x+x' }), 'две из трёх');
+  ok(!SRS.isStuck({ h2: 'xx+++' }), 'старые ошибки не считаются');
+  ok(SRS.isStuck({ h2: '+', lapses: 3 }), 'три срыва');
+  ok(!SRS.isStuck(null));
+});
+t('SRS: очередь — просроченные, потом новые не больше maxNew', () => {
+  const day = '2026-02-01', progress = { a: { due: '2026-01-20', box: 2 }, b: { due: '2026-01-31', box: 1 }, c: { due: '2026-03-01', box: 5 } };
+  const q = SRS.buildQueue(['a', 'b', 'c', 'n1', 'n2', 'n3'], progress, { size: 4, maxNew: 1, day });
+  ok(q[0] === 'a' && q[1] === 'b', 'просроченные первыми по сроку: ' + q);
+  ok(q.includes('n1') && q.length === 4, 'добивка: ' + q);
+});
+
+/* ---------- очки, звания, метрики ---------- */
+const mkS = (daysAgo, items, module = 'today') => { const d = new Date(Date.now() - daysAgo * 864e5); return { id: 's' + daysAgo + module, day: SRS.today(d), module, startedAt: d.getTime(), durationSec: 60, items }; };
+t('очки: качество решения, «Предскажи» и «Почему»', () => {
+  ok(SC.itemPoints({ verdict: 'best' }) === 10 && SC.itemPoints({ verdict: 'ok' }) === 5 && SC.itemPoints({ verdict: 'risky' }) === 3 && SC.itemPoints({ verdict: 'bad' }) === 1);
+  ok(SC.itemPoints({ verdict: 'best', read: true, why: true }) === 15);
+});
+t('звания и серия', () => {
+  ok(SC.rankOf(0).name === 'Новичок' && SC.rankOf(260).name === 'Запасной');
+  near(SC.rankOf(175).frac, 0.5, 1e-9, 'доля до следующего');
+  const five = Array.from({ length: 5 }, () => ({ verdict: 'best' }));
+  const sum = SC.summarize([mkS(0, five), mkS(1, five), mkS(3, five)]);
+  ok(sum.streak === 2 && sum.points === 150, `серия ${sum.streak}, очки ${sum.points}`);
+});
+t('readRate: срез не считается', () => {
+  const r = SC.readRate([mkS(1, [{ read: true }, { read: false }]), mkS(1, [{ read: false }], 'test')]);
+  ok(r.n === 2 && r.ok === 1);
+});
+t('чтение игры: недели и тренд', () => {
+  const ss = [mkS(25, [{ read: false }, { read: false }, { read: false }, { read: true }]), mkS(20, [{ read: false }, { read: true }]),
+    mkS(10, [{ read: true }, { read: true }, { read: true }]), mkS(2, [{ read: true }, { read: false, why: true }])];
+  const r = SC.readingTrend(ss);
+  ok(r.weeks.length === 6 && r.n === 11, 'всего прогнозов ' + r.n);
+  ok(r.trend > 0, 'тренд вверх: ' + r.trend);
+  ok(r.whyN === 1 && r.whyRate === 1);
+});
+t('уверенность: спешит / сомневается / уверенно', () => {
+  const it = (ms, v) => ({ cardId: 'x', timeMs: ms, verdict: v });
+  const rush = SC.confidence([mkS(1, [...Array(5)].map(() => it(1000, 'bad')).concat([...Array(5)].map(() => it(8000, 'best'))))]);
+  ok(rush.label === 'Спешит', rush.label);
+  const doubt = SC.confidence([mkS(1, [...Array(8)].map(() => it(9000, 'best')).concat([...Array(2)].map(() => it(1200, 'ok'))))]);
+  ok(doubt.label === 'Знает, но сомневается', doubt.label);
+  const sure = SC.confidence([mkS(1, [...Array(6)].map(() => it(1200, 'best')).concat([...Array(4)].map(() => it(7000, 'ok'))))]);
+  ok(sure.label === 'Уверенно', sure.label);
+  ok(SC.confidence([mkS(1, [it(1000, 'best')])]).label === null, 'мало данных — без вывода');
+  ok(SC.confidence([mkS(1, [...Array(10)].map(() => it(1000, 'bad')), 'react:scan')]).n === 0, 'тренажёры не считаются');
+});
+
+/* ---------- живая сцена не знает вердикта ---------- */
+t('sim: реакция не зависит от вердикта ответа', () => {
+  let checked = 0;
+  for (const c of content.cards) {
+    if (!c.puck) continue;
+    for (const o of c.options || []) {
+      const lists = [c.read ? c.read.reveal || [] : [], o.moves || []];
+      const a = JSON.stringify(SIM.respond(c, lists, 'best')), b = JSON.stringify(SIM.respond(c, lists, 'bad')), r = JSON.stringify(SIM.respond(c, lists, 'risky'));
+      ok(a === b && b === r, `${c.id}/${o.id}: реакция зависит от вердикта`);
+      checked++;
+    }
+  }
+  ok(checked > 100, 'проверено мало вариантов: ' + checked);
+});
+t('sim: перестановка вердиктов в карточке не меняет сцену', () => {
+  const c = content.cards.find(x => x.puck && (x.options || []).length >= 3);
+  const perm = { ...c, options: c.options.map((o, i, a) => ({ ...o, verdict: a[(i + 1) % a.length].verdict })) };
+  for (let i = 0; i < c.options.length; i++) {
+    const L = o => [c.read ? c.read.reveal || [] : [], o.moves || []];
+    ok(JSON.stringify(SIM.respond(c, L(c.options[i]))) === JSON.stringify(SIM.respond(perm, L(perm.options[i]))), 'вариант ' + i);
+  }
 });
 
 console.log(`unit: ${pass} ok, ${fail} failed`);
