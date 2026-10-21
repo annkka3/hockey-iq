@@ -6,6 +6,10 @@ import { tween, cancelAll, ease } from '../engine/anim.js';
 import * as P from '../engine/shot.js';
 import { ownStickImage, arenaImage, skaterImage, gripSprite, goaliePoseImage, GOALIE_UPM, GOALIE_HANDS, META, ready as imgReady, preload as preloadSprites } from '../engine/sprites.js';
 /* Промежуточный кадр вратаря между стойкой и бабочкой. */
+/* Защитник и заслон с клюшкой (холст 640 × 680, фигура 560 единиц, опора между коньками в (320, 588)). */
+const STICK_META = { w: 640, h: 680, ax: 320, ay: 588 };
+const loadImg = n => { const im = new Image(); im.decoding = 'async'; im.src = new URL('../../img/sprites/' + n + '.webp', import.meta.url).href; return im; };
+const DEF_IMG = loadImg('defender-them-front-stick'), SCREEN_IMG = loadImg('screen-us-back-stick');
 const DROP_IMG = new Image(); DROP_IMG.decoding = 'async'; DROP_IMG.src = new URL('../../img/sprites/goalie-pose-drop.webp', import.meta.url).href;
 import { state, startSession, logItem, finishSession, setProfile } from '../core/state.js';
 import { fx } from '../core/fx.js';
@@ -175,8 +179,8 @@ const MODES = [
 ];
 const SHOTS = 10;
 const CTRL = {
-  novice: { name: 'Новичок', line: 'Точный бросок: выбери силу — «Точный», «Обычный» или «Сильный», — веди пальцем по воротам (лупа над пальцем покажет прицел) и жми «Бросок». Случайного разброса нет — шайба летит ровно в прицел; риск на льду при этой силе показан рядом.', mult: 0 },
-  pro: { name: 'Профи', line: 'Зажми палец на воротах: прицел стоит чуть выше пальца, чтобы его не закрывать. Кольцо силы качается от слабой к максимальной — отпусти в нужный момент. Эллипс показывает разброс исполнения, он растёт с силой.', mult: 1 },
+  novice: { name: 'Новичок', line: 'Точный бросок: выбери силу — «Точный», «Обычный» или «Сильный», — веди пальцем по воротам (лупа над пальцем покажет прицел) и жми «Бросок». Случайного разброса нет (кроме режима «Техника», там разброс ×0,6 от «Профи») — шайба летит ровно в прицел, реакция вратаря без случайной добавки; риск на льду при этой силе показан рядом.', mult: 0 },
+  pro: { name: 'Профи', line: 'Зажми палец на воротах: прицел стоит чуть выше пальца, чтобы его не закрывать. Пока держишь, сила набирается (до максимума за 0,9 с) и дальше держится — отпусти, когда сила нужная. Эллипс показывает разброс исполнения, он растёт с силой.', mult: 1 },
 };
 const shotSet = () => ({ level: 'pro', speedMode: 'age', ctrl: 'novice', power: 0.5, preset: 'normal', tech: 'wrist', ...(state.profile.shot || {}) });
 
@@ -616,12 +620,15 @@ function runGame(mode, set, rerender) {
         // с клюшкой: защитник (лицом к нам) — крюк на льду в линии броска; заслон (спиной) — крюк перед собой у ворот
         const def = o.who !== 'screen';
         const gs = gripSprite(def ? 'them' : 'us', def ? 'front' : 'back', 'L', false, def ? 'block' : 'ready'), img = gs.img, M = META.skater;
-        if (!body || !imgReady(img)) continue;
+        if (!body || (!imgReady(img) && !imgReady(def ? DEF_IMG : SCREEN_IMG))) continue;
         const us = body.pts.map(q => q.u), uc = (Math.min(...us) + Math.max(...us)) / 2;
         const near = Math.max(1, body.scale), vis = Math.min(1.5, 1 + (near - 1) * 0.3);
         const footY = yI + (yI - hor) * (vis - 1) * 0.9, x = toPx(uc, 0).x;
         const sc = (1.65 * mpx * vis) / 560;
         ctx.fillStyle = 'rgba(20,40,70,.25)'; ctx.beginPath(); ctx.ellipse(x, footY, 150 * sc, 24 * sc, 0, 0, 7); ctx.fill();
+        // нарисованные с клюшкой картинки (защитник лицом к нам, заслон спиной); код рисует клюшку, только если их нет
+        const SI = def ? DEF_IMG : SCREEN_IMG;
+        if (imgReady(SI)) { ctx.drawImage(SI, x - STICK_META.ax * sc, footY - STICK_META.ay * sc, STICK_META.w * sc, STICK_META.h * sc); continue; }
         // древко — прямая через обе руки картинки до льда; у защитника лёд ближе к нам (ниже ног), у заслона — дальше (выше)
         const toS = ([gx, gy]) => ({ x: x + (gs.mirror ? M.ax - gx : gx - M.ax) * sc, y: footY + (gy - M.ay) * sc });
         const t0 = toS(gs.top), b0 = toS(gs.bottom), iceY = footY + (def ? 22 : -30) * sc;
@@ -667,9 +674,10 @@ function runGame(mode, set, rerender) {
         ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 1.5 * dpr; ctx.setLineDash([3 * dpr, 3 * dpr]);
         ctx.beginPath(); ctx.moveTo(opts.finger.x * dpr, opts.finger.y * dpr); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([]);
       }
-      // дуга полёта до броска: куда шайба поднимется на этой силе (без разброса)
+      // дуга полёта до броска — во всех режимах: пунктир от шайбы к прицелу на этой силе (без разброса);
+      // красная — на этой силе так высоко не долететь. В «Профи» до зажима — на средней силе.
       if (opts.aim && !opts.puck) {
-        const ar = P.arc(S, opts.aim, kOf(opts.f) / 3.6);
+        const ar = P.arc(S, opts.aim, kOf(opts.fPrev ?? opts.f) / 3.6);
         ctx.strokeStyle = ar.weak ? 'rgba(255,77,106,.85)' : 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.6 * dpr; ctx.setLineDash([2 * dpr, 4 * dpr]);
         ctx.beginPath();
         for (let i = 0; i <= 24; i++) { const q = puckAt({ u: opts.aim.u, v: ar.H, k: i / 24, ar }); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); }
@@ -911,7 +919,7 @@ function runGame(mode, set, rerender) {
       drawMap();
       if (Dpos && Math.hypot(S.x - Dpos.x, S.y - Dpos.y) <= P.MATCH.reach) return late();
       const f = curF();
-      frame(goalieSil(), aim ? { aim, f, drift: driftPreview(f), ring: pro && !!charge, finger: pro && charge ? finger : null } : {});
+      frame(goalieSil(), aim ? { aim, f, fPrev: pro && !charge ? 0.55 : f, drift: driftPreview(f), ring: pro && !!charge, finger: pro && charge ? finger : null } : {});
       if (aim && touch && aimDrag) loupe();
       if ((pro && charge) || aim) status();
       requestAnimationFrame(loop);
@@ -978,7 +986,11 @@ function runGame(mode, set, rerender) {
       const sil = goalieSil();
       const rel = { t: tRel, S: { ...S }, body: { ...body } };
       if (dyn) relMark = sv('circle', { cx: scr(S).x, cy: scr(S).y, r: 0.55, class: 'rel-mark' }, lEnt);
-      const seed = (Math.random() * 2 ** 32) >>> 0, rng = P.rngFrom(seed);
+      // seed — от самой ситуации (точка броска, вратарь, прицел, сила, режим), а не новый на каждый бросок:
+      // одинаковые условия — одинаковый исход. В «Новичке» и реакция вратаря без случайной добавки.
+      const gp = sil[0] ? sil[0].pts[0] : { u: 0, v: 0 };
+      const seed = P.setupSeed(mode.id, S.x, S.y, gp.u, gp.v, aimP.u, aimP.v, k, stype || '', techKey || ''), rng = P.rngFrom(seed);
+      const jitter = pro || sc.tech ? 0.06 : 0;
       const tmult = stype ? P.SHOT_TYPES[stype].scatter : 1;
       const em = effMult();
       let target = em ? P.scatter(aimP, (k - minK) / (150 - minK), rng, em * tmult) : { ...aimP };
@@ -991,7 +1003,7 @@ function runGame(mode, set, rerender) {
         const sp = P.project(S, { ...sc.screen, h: 1 });
         if (Math.abs(target.u - sp.u) < 0.75) { delay += P.TRACK.screen; screened = true; }
       }
-      const r = P.resolveShot({ S, target, speedMs, goalie: { sil, level: set.level, delay }, others: others(), rng });
+      const r = P.resolveShot({ S, target, speedMs, goalie: { sil, level: set.level, delay }, others: others(), rng, jitter });
       const shotT = { ...target };
       target = r.target; // слабый бросок не долетает до прицела по высоте
       const ar = r.arc;
@@ -1143,7 +1155,7 @@ function model(view) {
       `Реакция вратаря: ${lv}; плюс случайные ±30 мс. Уровни — учебные настройки, а не модель реального вратаря определённой лиги.`,
       'Скорость рук и щитков: ловушка быстрее всего, корпус медленнее всего; смещение в бабочке и приставным шагом — около 2,4 м/с, из положения после сейва — 1,7 м/с.',
       'Силуэты «бабочка» и «стойка» — прямоугольники по размерам взрослого вратаря. Детский вратарь меньше — открыто больше, особенно верх.',
-      `Разброс растёт с силой: ±${Math.round(P.spread(0) * 200)} см на 40 км/ч, ±${Math.round(P.spread((95 - 40) / 110) * 200)} см на 95, ±${Math.round(P.spread(1) * 200)} см на 150. Это разброс исполнения в режиме «Профи»; в «Новичке» его нет — шайба летит точно в прицел. У каждого броска свой номер: одинаковые условия дают одинаковый результат.`,
+      `Разброс растёт с силой: ±${Math.round(P.spread(0) * 200)} см на 40 км/ч, ±${Math.round(P.spread((95 - 40) / 110) * 200)} см на 95, ±${Math.round(P.spread(1) * 200)} см на 150. Это разброс исполнения в режиме «Профи» (там же реакция вратаря ±30 мс); в «Новичке» разброса нет — шайба летит точно в прицел, реакция вратаря постоянная, кроме режима «Техника» (разброс ×0,6 от «Профи»). Случайность привязана к самой ситуации (точка броска, вратарь, прицел, сила): одинаковые условия дают одинаковый результат.`,
       `Заслон: если шайба проходит рядом с партнёром, вратарь видит выпуск на ${Math.round(P.TRACK.screen * 1000)} мс позже.`,
       `Вратарь не встал на угол (ещё едет) — плюс ${Math.round(P.TRACK.notSet * 1000)} мс к реакции.`,
       `Бросок в движении (${P.SKATE} м/с поперёк слота): прицел — это точка, куда хочешь попасть. Поправку на собственное движение руки делают сами, поэтому снос в игре не добавляется. Сложность режима — вратарь, который догоняет угол.`,

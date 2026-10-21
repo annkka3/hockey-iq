@@ -93,6 +93,19 @@ t('силуэт растёт, когда вратарь выходит на уг
   const w = d => { const sil = P.silhouette(S, P.goaliePos(S, d), P.STANCES.stand); const b = sil.find(p => p.id === 'body'); const us = b.pts.map(p => p.u); return Math.max(...us) - Math.min(...us); };
   ok(w(1.5) > w(0.3), 'выход должен увеличивать силуэт');
 });
+t('«Новичок»: 10 одинаковых бросков — один исход', () => {
+  const S = { x: 1.5, y: 46 }, G = P.goaliePos(S, 0.8), sil = P.silhouette(S, G, P.STANCES.stand);
+  const res = new Set();
+  for (let i = 0; i < 10; i++) {
+    const seed = P.setupSeed('goalie', S.x, S.y, sil[0].pts[0].u, sil[0].pts[0].v, 0.7, 0.9, 90, '', '');
+    const r = P.resolveShot({ S, target: { u: 0.7, v: 0.9 }, speedMs: 25, goalie: { sil, level: 'pro' }, rng: P.rngFrom(seed), jitter: 0 });
+    res.add(r.result + '|' + r.reaction + '|' + (r.part || ''));
+  }
+  ok(res.size === 1, 'исходы различаются: ' + [...res].join(', '));
+  // и в «Профи» тот же seed даёт тот же исход
+  const one = () => P.resolveShot({ S, target: { u: 0.7, v: 0.9 }, speedMs: 25, goalie: { sil, level: 'pro' }, rng: P.rngFrom(P.setupSeed('x', 1)) });
+  ok(one().reaction === one().reaction, 'тот же seed — та же реакция');
+});
 t('генератор случайностей воспроизводим', () => {
   const a = P.rngFrom(7), b = P.rngFrom(7);
   for (let i = 0; i < 5; i++) ok(a() === b());
@@ -111,7 +124,10 @@ t('карточки: варианты и лучший ответ', () => {
 });
 t('крайние — ЛН / ПН (не ЛП / ПП)', () => {
   const txt = JSON.stringify(content);
-  ok(!/\b(ЛП|ПП)\b/.test(txt), 'встречается ЛП или ПП');
+  // \b в JS не работает с кириллицей — граница слова задаётся явно
+  const RX = /(?<![А-Яа-яЁё])(ЛП|ПП)(?![А-Яа-яЁё])/;
+  ok(RX.test('ЛП отдаёт') && RX.test('пас на ПП.') && !RX.test('ЛПН') && !RX.test('ППП'), 'проверка ЛП/ПП сама не работает');
+  ok(!RX.test(txt), 'встречается ЛП или ПП');
 });
 t('игроки на площадке', () => {
   for (const c of content.cards) for (const e of [...(c.us || []), ...(c.them || [])]) {
@@ -143,6 +159,22 @@ t('SRS: застрявшая — 2 ошибки из 3 последних или
   ok(!SRS.isStuck({ h2: 'xx+++' }), 'старые ошибки не считаются');
   ok(SRS.isStuck({ h2: '+', lapses: 3 }), 'три срыва');
   ok(!SRS.isStuck(null));
+});
+t('SRS: история h2 восстанавливается из журнала, застревание видно у старых записей', () => {
+  const progress = { a: { box: 1, due: '2026-01-01', seen: 3, lapses: 2 }, b: { box: 2, h2: '++' }, c: { box: 1 } };
+  const sessions = [
+    { module: 'train', startedAt: 1, items: [{ key: 'a', verdict: 'best' }, { key: 'b', verdict: 'bad' }] },
+    { module: 'test', startedAt: 2, items: [{ key: 'a', verdict: 'best' }] },
+    { module: 'train', startedAt: 3, items: [{ key: 'a', verdict: 'bad' }, { key: 'a', verdict: 'bad', mirrored: true }] },
+    { module: 'react:scan', startedAt: 4, items: [{ key: 'a', verdict: 'best' }] },
+    { module: 'train', startedAt: 5, items: [{ key: 'a', verdict: 'bad' }] },
+  ];
+  const n = SRS.rebuildH2(progress, sessions);
+  ok(n === 1, 'восстановлена одна запись: ' + n);
+  ok(progress.a.h2 === '+xx', 'история a: ' + progress.a.h2);
+  ok(progress.b.h2 === '++', 'существующая история не трогается');
+  ok(progress.c.h2 === undefined, 'без ответов в журнале — без истории');
+  ok(SRS.isStuck(progress.a), 'две ошибки из трёх — застряла');
 });
 t('SRS: очередь — просроченные, потом новые не больше maxNew', () => {
   const day = '2026-02-01', progress = { a: { due: '2026-01-20', box: 2 }, b: { due: '2026-01-31', box: 1 }, c: { due: '2026-03-01', box: 5 } };

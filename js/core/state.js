@@ -1,7 +1,7 @@
 /* Состояние приложения на устройстве. Структура повторяет облачную (players/{uid}/…),
    поэтому синхронизация — это перенос записей один к одному, без преобразований.
    Ключи хранения начинаются с hk_ и не пересекаются с языковыми приложениями на том же домене. */
-import { review, today } from '../engine/srs.js';
+import { review, today, rebuildH2 } from '../engine/srs.js';
 
 const KEY = 'hk_state_v1';
 const MAX_SESSIONS = 400;
@@ -29,6 +29,13 @@ function load() {
 }
 
 export const state = load();
+
+/* Миграция один раз: история ответов (h2) для старых записей прогресса — из журнала сессий,
+   чтобы «застрявшие» ситуации определялись и для карточек, начатых до появления h2. */
+if ((state.meta.h2v || 0) < 1) {
+  try { rebuildH2(state.progress || {}, state.sessions || []); } catch (e) { /* не критично */ }
+  state.meta.h2v = 1;
+}
 
 /* Что изменилось с последней отправки в облако. */
 export const dirty = { progress: new Set(), sessions: new Set(), cards: new Set(), removed: new Set(), profile: false, parent: false };

@@ -361,7 +361,8 @@ def main():
     by = {}
     for c in cards: by[c['deck']] = by.get(c['deck'], 0) + 1
     print(f'Розыгрышей: {len(out["plays"])}')
-    print(f'Готово: {len(cards)} карточек ' + ', '.join(f'{k} {v}' for k, v in by.items()) + f' → data/content.json')
+    n = len(cards); word = 'карточек' if 10 < n % 100 < 20 else {1: 'карточка', 2: 'карточки', 3: 'карточки', 4: 'карточки'}.get(n % 10, 'карточек')
+    print(f'Готово: {n} {word} ' + ', '.join(f'{k} {v}' for k, v in by.items()) + f' → data/content.json')
 
 
 if __name__ == '__main__':

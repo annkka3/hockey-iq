@@ -32,6 +32,28 @@ export function review(rec, verdict, now = Date.now()) {
 export const isStuck = r => !!r && (((r.h2 || '').slice(-3).match(/x/g) || []).length >= 2 || r.lapses >= 3);
 export const isLearned = r => !!r && r.box >= 3;
 
+/* Восстановление истории ответов (h2) для старых записей прогресса по журналу сессий — один раз при обновлении.
+   Берутся только ответы, которые меняли интервалы: не контрольный срез, не зеркальные варианты, не тренажёры
+   и не бросок. Записи, у которых h2 уже есть, не трогаются. Возвращает число восстановленных записей. */
+export function rebuildH2(progress, sessions) {
+  const hist = {};
+  const list = [...(sessions || [])].sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0));
+  for (const s of list) {
+    if (!s || s.module === 'test' || /^(react|shot|film|vision)/.test(s.module || '')) continue;
+    for (const it of s.items || []) {
+      if (!it || !it.key || it.mirrored || !it.verdict) continue;
+      hist[it.key] = (hist[it.key] || '') + (it.verdict === 'best' ? '+' : it.verdict === 'bad' ? 'x' : '~');
+    }
+  }
+  let n = 0;
+  for (const k in progress) {
+    const r = progress[k];
+    if (!r || r.h2 || !hist[k]) continue;
+    r.h2 = hist[k].slice(-8); n++;
+  }
+  return n;
+}
+
 /* Набор на сессию: сначала просроченные, затем новые (не больше maxNew), добивка — самые слабые, потом снова новые. */
 export function buildQueue(keys, progress, { size = 10, maxNew = 5, day = today() } = {}) {
   const due = [], fresh = [], rest = [];

@@ -38,7 +38,7 @@ export const PLAYERS = [
   { id: 'draisaitl', ru: 'Леон Драйзайтль', num: 29, pos: 'Центральный нападающий', rare: 'epic', facts: ['Родом из Германии.', 'Получил «Харт Трофи» как самый ценный игрок сезона.'],
     how: 'Бросок: 7 голов из 10 в любом режиме', test: s => s.shotBest >= 7, prog: s => [s.shotBest, 7] },
   { id: 'matthews', ru: 'Остон Мэттьюс', num: 34, pos: 'Центральный нападающий', rare: 'epic', facts: ['Родом из США.', 'Один из лучших снайперов НХЛ.'],
-    how: '«Обыграй вратаря»: 7 из 10 против уровня НХЛ', test: s => s.goalieNhlBest >= 7, prog: s => [s.goalieNhlBest, 7] },
+    how: '«Обыграй вратаря»: 7 голов из 10 против уровня «Эксперт»', test: s => s.goalieNhlBest >= 7, prog: s => [s.goalieNhlBest, 7] },
   { id: 'mackinnon', ru: 'Натан Маккиннон', num: 29, pos: 'Центральный нападающий', rare: 'legend', facts: ['Родом из Канады.', 'Выигрывал Кубок Стэнли и «Харт Трофи».'],
     how: '75 выученных ситуаций', test: s => s.learned >= 75, prog: s => [s.learned, 75] },
   { id: 'ovechkin', ru: 'Александр Овечкин', num: 8, pos: 'Нападающий', rare: 'legend', facts: ['Родом из Москвы.', 'Забил больше всех голов в истории НХЛ.'],
@@ -54,6 +54,9 @@ export function stats() {
   const by = m => state.sessions.filter(x => x.module === m || x.module.startsWith(m));
   const goodIn = x => x.items.filter(i => i.verdict === 'best').length;
   const maxGood = list => Math.max(0, ...list.map(goodIn));
+  // в «Броске» verdict — это качество решения; голы считаются по исходу (goal), старые записи — по result
+  const goalsIn = x => x.items.filter(i => i.goal === true || (i.goal == null && i.result === 'goal')).length;
+  const maxGoals = list => Math.max(0, ...list.map(goalsIn));
   const missionsAll = (lib.plays || []).filter(p => p.mission);
   const filmsAll = (lib.plays || []).filter(p => !p.mission);
   const doneFilm = p => state.sessions.some(x => x.module === 'film:' + p.id && x.items.length);
@@ -68,9 +71,9 @@ export function stats() {
     scanBest: maxGood(by('react:scan')),
     blitzBest: maxGood(by('react:blitz')),
     foBest: (t => t.length ? Math.min(...t) : 0)(by('react:faceoff').flatMap(x => x.items.filter(i => i.verdict === 'best').map(i => i.timeMs))),
-    shotBest: maxGood(by('shot:')),
-    goalieNhlBest: maxGood(by('shot:goalie').filter(x => x.items.some(i => i.level === 'nhl'))),
-    goals: by('shot:').reduce((a, x) => a + goodIn(x), 0),
+    shotBest: maxGoals(by('shot:')),
+    goalieNhlBest: maxGoals(by('shot:goalie').filter(x => x.items.some(i => i.level === 'nhl'))),
+    goals: by('shot:').reduce((a, x) => a + goalsIn(x), 0),
   };
 }
 

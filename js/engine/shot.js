@@ -152,7 +152,9 @@ export function frameHit(p) {
    goalie: { pos, stance, level, delay } — delay: доп. задержка (заслон, переезд после паса).
    shift: где силуэт вратаря в момент выпуска (для королевской дороги он ещё едет).
    others: силуэты защитников/заслона (не двигаются). */
-export function resolveShot({ S, target: aimed, speedMs, goalie, others = [], rng = Math.random }) {
+/* jitter — разброс реакции вратаря (с), по умолчанию ±30 мс; в учебном режиме («Новичок») 0 —
+   тогда одинаковые условия всегда дают одинаковый исход. rng — генератор от seed ситуации (rngFrom). */
+export function resolveShot({ S, target: aimed, speedMs, goalie, others = [], rng = Math.random, jitter = 0.06 }) {
   const ar = arc(S, aimed, speedMs);
   const target = ar.weak ? { u: aimed.u, v: ar.H } : aimed;
   const T = ar.T;
@@ -162,7 +164,7 @@ export function resolveShot({ S, target: aimed, speedMs, goalie, others = [], rn
   // защитник и заслон: шайба на их глубине — на высоте дуги, а не на прямой
   for (const b of others) if (b.parts.some(p => inPoly(arcPoint(ar, target, p.scale), p.pts))) return { ...out, result: 'blocked', by: b.who };
   const lvl = LEVELS[goalie.level] || LEVELS.pro;
-  const reaction = lvl.reaction + (goalie.delay || 0) + (rng() - 0.5) * 0.06;
+  const reaction = lvl.reaction + (goalie.delay || 0) + (rng() - 0.5) * jitter;
   const sil = goalie.sil;
   if (!sil.length) return { ...out, result: 'goal', empty: true, reaction }; // пустые ворота
   if (sil.some(p => inPoly(arcPoint(ar, target, p.scale), p.pts))) return { ...out, result: 'save', reason: 'body', reaction };
@@ -207,6 +209,12 @@ export function rngFrom(seed) {
 }
 
 export const kmh = ms => Math.round(ms * 3.6);
+/* Seed ситуации: одинаковая точка броска, вратарь, прицел, сила и режим → одинаковый seed → одинаковый исход. */
+export function setupSeed(...parts) {
+  let x = 2166136261 >>> 0;
+  for (const ch of parts.map(v => (typeof v === 'number' ? v.toFixed(3) : String(v))).join('|')) { x ^= ch.charCodeAt(0); x = Math.imul(x, 16777619) >>> 0; }
+  return x;
+}
 
 /* Тип броска после передачи или отскока: в одно касание — выпуск сразу, но разброс больше;
    после приёма — на обработку уходит время (вратарь успевает сместиться), зато точнее. */

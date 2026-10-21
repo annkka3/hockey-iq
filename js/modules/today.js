@@ -1,5 +1,5 @@
 /* «Сегодня»: тренировка дня, серия, звание, сообщение от родителя, что дальше. */
-import { h, icon, ring, meter, svg } from '../ui.js';
+import { h, icon, ring, meter, svg, plural } from '../ui.js';
 import { lib, keysOf, trainCards } from '../content.js';
 import { state } from '../core/state.js';
 import { summarize } from '../engine/scoring.js';
@@ -28,7 +28,7 @@ export function render(view, rerender) {
     h('div.hero-row',
       ring(Math.min(done, size), size, 'из ' + size),
       h('div', { style: { display: 'grid', gap: '14px' } },
-        h('div.stat', { style: { color: 'var(--gold)' } }, sum.streak, h('small', 'дней подряд')),
+        h('div.stat', { style: { color: 'var(--gold)' } }, sum.streak, h('small', `${plural(sum.streak, 'день', 'дня', 'дней')} подряд`)),
         h('div.stat', sum.points, h('small', 'очков')))),
     h('button.btn.primary.block', { onclick: start }, done >= size ? 'Ещё смена' : done ? 'Продолжить' : 'Выйти на лёд'),
     h('div.rankbar',
@@ -44,7 +44,7 @@ export function render(view, rerender) {
   if (goal && goal.target) {
     const week = weekDays(sum);
     view.append(h('div.panel', { style: { marginTop: '12px' } },
-      h('div.row', h('div.grow', h('b', 'Цель недели'), h('div.muted.small', `${goal.target} ${goal.target < 5 ? 'дня' : 'дней'} с тренировкой${goal.reward ? ' · награда: ' + goal.reward : ''}`)),
+      h('div.row', h('div.grow', h('b', 'Цель недели'), h('div.muted.small', `${goal.target} ${plural(goal.target, 'день', 'дня', 'дней')} с тренировкой${goal.reward ? ' · награда: ' + goal.reward : ''}`)),
         h('div.stat', { style: { fontSize: '22px' } }, `${week}/${goal.target}`)),
       h('div', { style: { marginTop: '10px' } }, meter(week / goal.target, true))));
   }
