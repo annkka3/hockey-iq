@@ -269,7 +269,12 @@ export class Pov {
      Клюшка рисуется в мировых координатах: от перчатки к крюку на льду — на стороне хвата или в точке stick со схемы. */
   drawPlayer(it, P, f, me) {
     const ctx = this.ctx, dpr = this.dpr, p = it.p, en = it.e;
-    const fw = en.faceW || { x: 0, y: en.team === 'us' ? 1 : -1 };
+    let fw = en.faceW || { x: 0, y: en.team === 'us' ? 1 : -1 };
+    if (en.goalie) {
+      // вратарь всегда лицом к площадке: от своих ворот, а не к сетке
+      const out = p.y < this.r.L / 2 ? 1 : -1;
+      if (fw.y * out < 0.25) fw = { x: fw.x * 0.5, y: out };
+    }
     const fx = fw.x, fy = fw.y, lx = -fy, ly = fx;
     const hand = en.hand || 'L', hs = hand === 'L' ? 1 : -1;
     const team = en.team === 'us' ? 'us' : 'them';
@@ -299,7 +304,9 @@ export class Pov {
     // клюшка: крюк — в точке stick или впереди на стороне хвата; древко от нижней перчатки
     const st = en.data.stick;
     const blade = st ? P(st[0], st[1], 0.03) : P(p.x + fx * 0.95 + lx * hs * 0.45, p.y + fy * 0.95 + ly * hs * 0.45, 0.03);
-    const toe = st ? P(st[0] + lx * hs * 0.32, st[1] + ly * hs * 0.32, 0.03) : P(p.x + fx * 1.0 + lx * hs * 0.78, p.y + fy * 1.0 + ly * hs * 0.78, 0.03);
+    // носок крюка — наружу от корпуса, с той стороны, где крюк на самом деле (как на схеме), продолжая древко
+    const side = st ? (Math.sign((st[0] - p.x) * lx + (st[1] - p.y) * ly) || hs) : hs;
+    const toe = st ? P(st[0] + lx * side * 0.32, st[1] + ly * side * 0.32, 0.03) : P(p.x + fx * 1.0 + lx * hs * 0.78, p.y + fy * 1.0 + ly * hs * 0.78, 0.03);
     const gl = GLOVES[view].map(toScr);
     const grip = gl[blade && Math.abs(blade.x - gl[0].x) < Math.abs(blade.x - gl[1].x) ? 0 : 1];
     const other = gl[0] === grip ? gl[1] : gl[0];
