@@ -608,11 +608,10 @@ function runGame(mode, set, rerender) {
       };
       if (opts.behind) drawFlight();
       drawGoalie(sil, opts.part);
-      // заслон (наш, спиной к нам) и защитник (соперник, лицом к нам). Что они закрывают по модели — тень на воротах;
+      // заслон (наш, спиной к нам) и защитник (соперник, лицом к нам). Что они закрывают, игрок читает по картинке (расчёт — по модели, без подсветки);
       // сам игрок стоит на льду между нами и воротами. Перспектива сжата: при «длинном» объективе этого вида
       // игрок в 3 м от нас вышел бы в полкадра, поэтому рост растёт не пропорционально близости, а мягче (не больше 1,5×).
       for (const o of others()) {
-        for (const p of o.parts) polyF(p.pts, o.who === 'screen' ? 'rgba(27,63,122,.16)' : 'rgba(212,42,60,.16)', 'rgba(0,0,0,0)');
         const body = o.parts.find(q => q.id === 'body');
         const img = skaterImage(o.who === 'screen' ? 'us' : 'them', o.who === 'screen' ? 'back' : 'front'), M = META.skater;
         if (!body || !imgReady(img)) continue;
@@ -688,7 +687,7 @@ function runGame(mode, set, rerender) {
 
     /* Вратарь — цельный рисунок (стойка или «бабочка»), без растяжек: пропорции головы, корпуса и щитков
        всегда как у человека. Ставится коньками на лёд в центр корпуса по модели, рост — по высоте силуэта модели.
-       Что именно перекрыто воротам по расчёту — полупрозрачная тень под рисунком; при сейве часть, которая
+       Перекрытая часть ворот не подсвечивается — игрок читает её по рисунку; при сейве часть, которая
        дотянулась (ловушка, блин, щиток), обводится пунктиром там, где её остановила модель. */
     let lastGx = null;
     const gv = { pose: null, prev: null, t0: 0, at: null, tl: 0 }; // показанная поза и плавный переход между позами
@@ -699,16 +698,10 @@ function runGame(mode, set, rerender) {
         const a = toPx(Math.min(...us), Math.max(...vs)), b = toPx(Math.max(...us), Math.min(...vs));
         return { x: a.x, y: a.y, w: Math.max(2, b.x - a.x), h: Math.max(2, b.y - a.y) };
       };
-      const shiftOf = p => (partShift && partShift.id === p.id ? partShift : null);
       const all = sil.map(p => box(p));
       const minX = Math.min(...all.map(b => b.x)), maxX = Math.max(...all.map(b => b.x + b.w));
       const topY = Math.min(...all.map(b => b.y)), baseY = Math.max(...all.map(b => b.y + b.h));
-      // закрытая часть ворот по модели
-      ctx.fillStyle = 'rgba(212,42,60,.14)';
-      for (const p of sil) {
-        const sh = shiftOf(p);
-        ctx.beginPath(); p.pts.forEach((q, i) => { const pp = toPx(q.u + (sh ? sh.u : 0), q.v + (sh ? sh.v : 0)); i ? ctx.lineTo(pp.x, pp.y) : ctx.moveTo(pp.x, pp.y); }); ctx.closePath(); ctx.fill();
-      }
+      // закрытую часть ворот не подсвечиваем: что перекрыто, игрок читает по самому вратарю (расчёт — по модели)
       const fly = sil.some(q => q.id === 'pads');
       const body = sil.find(q => q.id === 'body'), bb = body ? box(body) : null;
       const cx = bb ? bb.x + bb.w / 2 : (minX + maxX) / 2;
