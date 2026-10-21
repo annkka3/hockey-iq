@@ -35,7 +35,11 @@ export function stickPose({ hand = 'L', action = 'ready', contact = null, toward
   if (action === 'receive' && toward && !contact) {
     // крюк встречает шайбу рабочей поверхностью: выносим его навстречу передаче на стороне хвата
     const L = Math.hypot(toward.f, toward.l) || 1, uf = toward.f / L, ul = toward.l / L;
-    mid = v(a.f * 0.6 + uf * 0.35, a.l * side * 0.7 + ul * 0.35);
+    // приём всегда на форхенде: крюк остаётся на стороне хвата (не меньше 0,18 м от середины), даже если пас идёт
+    // с другой стороны — шайба приходит поперёк корпуса на лицевую сторону; руки местами не меняются
+    let l0 = a.l * side * 0.7 + ul * 0.35;
+    if (l0 * side < 0.18) l0 = side * 0.18;
+    mid = v(Math.max(0.45, a.f * 0.6 + uf * 0.35), l0);
   }
   // бекхенд: контакт на другой стороне от хвата
   if ((mid.l - knob.l) * side < -0.05) face = 'back';

@@ -1,1 +1,54 @@
-/* eyes — стили этого раздела */
+/* eyes — вид «Глазами» и состояния экрана карточки */
+
+/* Состояния экрана: подпись в углу площадки и рамка своего цвета.
+   watch — смотри (идёт подводка), pause — стоп-кадр, choose — решай, result — последствия, review — разбор. */
+.phase-badge { position: absolute; left: 14px; bottom: 14px; z-index: 3; pointer-events: none;
+  font: 800 10px var(--display); letter-spacing: .14em; text-transform: uppercase; padding: 5px 10px; border-radius: 99px;
+  color: #fff; background: rgba(4, 8, 14, .72); border: 1px solid rgba(255, 255, 255, .18); transition: background .25s, color .25s; }
+.phase-badge:empty { display: none; }
+.rink-wrap[data-phase] { transition: box-shadow .3s, background .3s; }
+.rink-wrap[data-phase="watch"] .phase-badge { color: #BFF3FF; }
+.rink-wrap[data-phase="watch"] .phase-badge::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: #3FD7FF; vertical-align: 1px; animation: phase-blink 1s ease-in-out infinite; }
+.rink-wrap[data-phase="pause"] { background: linear-gradient(180deg, rgba(255, 255, 255, .55), rgba(255, 255, 255, .08)); box-shadow: 0 0 34px -8px rgba(255, 255, 255, .5); }
+.rink-wrap[data-phase="pause"] .phase-badge { background: #fff; color: #0A1626; }
+.rink-wrap[data-phase="choose"] { background: linear-gradient(180deg, rgba(255, 197, 61, .6), rgba(255, 197, 61, .08)); box-shadow: 0 0 38px -6px rgba(255, 197, 61, .45); }
+.rink-wrap[data-phase="choose"] .phase-badge { background: #FFC53D; color: #2A1A00; }
+.rink-wrap[data-phase="result"] .phase-badge { background: rgba(63, 215, 255, .9); color: #04131F; }
+.rink-wrap[data-phase="review"] { background: linear-gradient(180deg, rgba(120, 140, 170, .35), rgba(120, 140, 170, .06)); box-shadow: none; }
+.rink-wrap[data-phase="review"] .phase-badge { background: rgba(4, 8, 14, .6); color: var(--muted); }
+@keyframes phase-blink { 50% { opacity: .25; } }
+.rink-wrap.pov-on .phase-badge { left: 12px; bottom: 12px; }
+.rink-wrap .tap-hint ~ .phase-badge, .rink-wrap:has(.tap-hint) .phase-badge { bottom: auto; top: 14px; }
+
+/* три кнопки взгляда: влево, вперёд, вправо */
+.pov-turn { grid-template-columns: 1fr .8fr 1fr; }
+.pov-ahead { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.pov-ahead svg { width: 22px; height: 22px; color: #33C8EA; }
+.pov-ahead span { font-size: 11px; }
+
+/* мини-карта во время решения скрыта: вместо неё кнопка «Карта» */
+.pov-mini.hidden-map { background: rgba(9, 24, 39, .9); }
+.pov-mini:not(.hidden-map) { cursor: zoom-in; }
+.pov-mapbtn { width: 100%; height: 100%; min-height: 64px; border: none; border-radius: 0; background: none; color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font: 700 13px var(--body); }
+.pov-mapbtn svg { width: 24px; height: 24px; color: #33C8EA; }
+
+/* крупная карта поверх экрана */
+.map-full { position: fixed; inset: 0; z-index: 95; background: rgba(2, 6, 12, .82); display: flex; align-items: center; justify-content: center;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px)); animation: map-in .18s ease-out; }
+.map-box { position: relative; width: 100%; max-width: 560px; border-radius: 18px; overflow: hidden; background: #DCE9F2; box-shadow: 0 20px 60px -10px rgba(0, 0, 0, .7); }
+.map-box .rink-svg { max-height: 82vh; width: 100%; border-radius: 0; }
+.map-x { position: absolute; right: 10px; top: 10px; z-index: 2; width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--stroke-hi);
+  background: rgba(4, 8, 14, .8); color: #fff; font-size: 18px; cursor: pointer; }
+@keyframes map-in { from { opacity: 0; transform: scale(.97); } }
+
+/* осмотр в разборе */
+.scan-box { margin: 10px 0 4px; padding: 10px 12px; border-radius: 14px; background: rgba(63, 215, 255, .07); border: 1px solid rgba(63, 215, 255, .2); }
+.scan-box p { margin: 4px 0; font-size: 14px; }
+.scan-box .scan-miss b { color: #FF6A82; }
+.scan-box .scan-ok { color: #2EE59D; }
+.ent.missed .body { stroke: #FF4D6A; stroke-width: .16; stroke-dasharray: .35 .25; }
+
+/* «Предскажи»: возможный, но менее вероятный исход — половина зачёта */
+.opt.read-partial { border-color: #FFC53D; background: rgba(255, 197, 61, .14); color: #FFE3A3; }
+.read-fb.part b { color: #FFC53D; }

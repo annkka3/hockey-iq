@@ -51,6 +51,8 @@ export const GRIPS = {
   // приём паса: крюк на льду, руки впереди
   'side-receive-gL': { top: [135, 280], bottom: [150, 360] },
   'side-receive-gR': { top: [160, 310], bottom: [200, 375] },
+  // торможение (хоккейная остановка), вполоборота лицом, смотрит влево, правый хват; левый хват — зеркало
+  'brake-gR': { top: [338, 250], bottom: [262, 345] },
   'front-receive-gL': { top: [205, 260], bottom: [320, 375] },
   // пас, бросок, перехват (крюк в линии паса): сбоку в обоих хватах, перехват — ещё и спереди
   'side-pass-gL': { top: [400, 262], bottom: [157, 391] },
@@ -61,6 +63,14 @@ export const GRIPS = {
   'side-block-gR': { top: [336, 247], bottom: [22, 427] },
   'front-block-gL': { top: [179, 236], bottom: [336, 427] },
 };
+/* Торможение: есть картинка правого хвата лицом влево; правый хват влево — как есть, левый хват вправо — её зеркало.
+   Остальные сочетания — null (используется обычный ракурс со «снегом» из-под коньков). */
+export function brakeSprite(team, hand, faceLeft) {
+  const t = team === 'us' ? 'us' : 'them';
+  if (faceLeft && hand === 'R') return { img: load(`skater-${t}-brake-gR`), mirror: false, ...GRIPS['brake-gR'] };
+  if (!faceLeft && hand === 'L') return { img: load(`skater-${t}-brake-gR`), mirror: true, ...GRIPS['brake-gR'] };
+  return null;
+}
 /* Какая картинка нужна игроку с хватом hand в ракурсе view, смотрящему влево (faceLeft) или вправо. */
 export function gripSprite(team, view, hand, faceLeft, action = 'ready', slow = true) {
   const t = team === 'us' ? 'us' : 'them', other = hand === 'L' ? 'R' : 'L';
@@ -95,7 +105,7 @@ export function skaterImage(team, view) {
    справа (умеренно / сильно), q3l — к броску слева, pushR / pushL — толчок вправо / влево,
    padL / padR — щиток выброшен влево / вправо по льду. */
 export const GOALIE_UPM = 300;
-export const GOALIE_POSES = ['stand', 'butterfly', 'glove', 'blocker', 'q3r', 'q3r2', 'pushR', 'padL', 'pushL', 'padR', 'q3l'];
+export const GOALIE_POSES = ['stand', 'butterfly', 'glove', 'blocker', 'q3r', 'q3r2', 'pushR', 'padL', 'pushL', 'padR', 'q3l', 'q3l2', 'drop']; // q3l2 — сильно развёрнут влево; drop — на полпути в «бабочку»
 /* Где в каждой позе ловушка и блин: метры от точки между коньками (вправо для смотрящего, вверх). */
 export const GOALIE_HANDS = {
   stand: { glove: [0.44, 0.86], blocker: [-0.45, 0.72] },
@@ -109,8 +119,11 @@ export const GOALIE_HANDS = {
   pushL: { glove: [0.47, 0.76], blocker: [-0.53, 0.63] },
   padR: { glove: [0.5, 0.89], blocker: [-0.53, 0.69] },
   q3l: { glove: [0.45, 0.93], blocker: [-0.5, 0.89] }, // развёрнут к броску слева для смотрящего
+  drop: { glove: [0.45, 0.65], blocker: [-0.45, 0.58] }, // опускается в «бабочку»
+  q3l2: { glove: [0.57, 0.93], blocker: [-0.25, 0.78] }, // сильно развёрнут к броску слева для смотрящего
 };
-export function goaliePoseImage(pose) { return load('goalie-pose-' + (GOALIE_POSES.includes(pose) ? pose : 'stand')); }
+/* team: 'them' — красный (исходные рисунки), 'us' — синий (перекраска тех же поз: goalie-pose-<поза>-us). */
+export function goaliePoseImage(pose, team = 'them') { return load('goalie-pose-' + (GOALIE_POSES.includes(pose) ? pose : 'stand') + (team === 'us' ? '-us' : '')); }
 export function goalieImage(team, back) {
   return load(`goalie-${team === 'us' ? 'us' : 'them'}-${back ? 'back' : 'front'}`);
 }
@@ -124,7 +137,7 @@ export function preload() {
     for (const k of Object.keys(GRIPS)) load(`skater-${team}-${k}`);
     goalieImage(team, false); goalieImage(team, true);
   }
-  GOALIE_POSES.forEach(goaliePoseImage);
+  GOALIE_POSES.forEach(p => { goaliePoseImage(p); goaliePoseImage(p, 'us'); });
   ownStickImage('L'); ownStickImage('R'); arenaImage();
 }
 export const ready = img => !!img && img.complete && img.naturalWidth > 0;

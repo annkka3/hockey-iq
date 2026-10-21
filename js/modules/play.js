@@ -13,10 +13,40 @@ import { similar, filmFor, SHOT_FOR, DRILL_FOR, SHOT_NAME, DRILL_NAME } from './
 import * as film from './film.js';
 import { openMode } from './shot.js';
 import { openDrill } from './react.js';
+import { fx } from '../core/fx.js';
 
 const LETTERS = ['А', 'Б', 'В', 'Г'];
 export const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const TAG = { best: 'Лучшее решение', ok: 'Можно', risky: 'Рискованно', bad: 'Ошибка' };
+/* Состояния экрана карточки: смотри (идёт подводка) → стоп-кадр (вопрос) → решай → последствия → разбор. */
+const PHASE = { watch: 'Смотри', pause: 'Стоп-кадр', choose: 'Решай', result: 'Последствия', review: 'Разбор' };
+
+/* ---------- Перенос: та же ситуация в зеркале (x → −x) ----------
+   Зеркалятся игроки, шайба, ходы, зоны, направление корпуса и точка крюка; амплуа ЛН↔ПН, ЛЗ↔ПЗ;
+   в текстах — «слева/справа», «левый/правый», «влево/вправо». Хват у «Я» остаётся из профиля,
+   у остальных (если задан) меняется: зеркальная картинка левши — правша. Ключ зеркальной карточки — «<ключ>~m». */
+const FORMS = ['ый', 'ая', 'ое', 'ые', 'ого', 'ой', 'ому', 'ым', 'ую', 'ых', 'ом', 'ыми'];
+const SWAP = new Map([['ЛН', 'ПН'], ['ПН', 'ЛН'], ['ЛЗ', 'ПЗ'], ['ПЗ', 'ЛЗ'], ['слева', 'справа'], ['справа', 'слева'], ['влево', 'вправо'], ['вправо', 'влево'],
+  ['налево', 'направо'], ['направо', 'налево'], ...FORMS.flatMap(f => [['лев' + f, 'прав' + f], ['прав' + f, 'лев' + f]])]);
+const WORD = new RegExp(`(^|[^А-Яа-яЁё])(${[...SWAP.keys()].sort((a, b) => b.length - a.length).map(w => w + '|' + w[0].toUpperCase() + w.slice(1)).join('|')})(?![А-Яа-яЁё])`, 'g');
+const swapText = t => typeof t === 'string' ? t.replace(WORD, (m, pre, w) => { const low = w[0].toLowerCase() + w.slice(1), r = SWAP.get(SWAP.has(w) ? w : low); return pre + (w[0] !== low[0] && !SWAP.has(w) ? r[0].toUpperCase() + r.slice(1) : r); }) : t;
+const ROLE_M = { LW: 'RW', RW: 'LW', LD: 'RD', RD: 'LD' };
+const mx = a => (Array.isArray(a) ? [-a[0], a[1], ...a.slice(2)] : a);
+const mirMoves = list => (list || []).map(m => ({ ...m, to: mx(m.to), ...(m.stick ? { stick: mx(m.stick) } : {}) }));
+const mirText = o => { if (!o || typeof o !== 'object') return o; const r = Array.isArray(o) ? [] : {}; for (const k in o) r[k] = typeof o[k] === 'string' ? swapText(o[k]) : mirText(o[k]); return r; };
+export function mirrorCard(card) {
+  const c = mirText(JSON.parse(JSON.stringify(card)));
+  c.id = card.id + '~m'; c.mirrored = true;
+  const ent = e => ({ ...e, x: -e.x, role: ROLE_M[e.role] || e.role, ...(e.from ? { from: mx(e.from) } : {}), ...(e.face ? { face: [-e.face[0], e.face[1]] } : {}),
+    ...(e.stick ? { stick: mx(e.stick) } : {}), ...(e.hand && !e.me ? { hand: e.hand === 'L' ? 'R' : 'L' } : {}) });
+  c.us = (c.us || []).map(ent); c.them = (c.them || []).map(ent);
+  if (c.puck) c.puck = { ...c.puck, x: -c.puck.x, ...(c.puck.from ? { from: mx(c.puck.from) } : {}) };
+  c.options = (c.options || []).map(o => ({ ...o, moves: mirMoves(o.moves), ...(o.zone ? { zone: { ...o.zone, x: -o.zone.x } } : {}) }));
+  if (c.read && c.read.reveal) c.read = { ...c.read, reveal: mirMoves(c.read.reveal) };
+  if (Array.isArray(c.view)) c.view = [...c.view];
+  return c;
+}
+export const mirrorKey = key => key + '~m';
 
 export function play(keys, { module = 'decks', preview = false, onDone, timer = 0, test = false, hset = null } = {}) {
   if (!keys.length) { toast('Пока нечего повторять — загляни завтра'); return; }
@@ -50,7 +80,9 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
     if (scene) { scene.destroy(); scene = null; }
     inner.innerHTML = '';
     root.scrollTop = 0;
-    const { card, variant } = parseKey(keys[i]);
+    const mirrored = String(keys[i]).endsWith('~m');
+    const parsed = parseKey(mirrored ? keys[i].slice(0, -2) : keys[i]);
+    const variant = parsed.variant, card = parsed.card && mirrored ? mirrorCard(parsed.card) : parsed.card;
     if (!card) { i++; return i < keys.length ? show() : finish(); }
 
     inner.append(h('div.play-top', h('button.x', { onclick: close, 'aria-label': 'Закрыть' }, icon('close')), dots()));
@@ -70,7 +102,12 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
     scene = new Scene(wrap, card, { rink: state.profile.rink, hand: state.profile.hand, anim: state.profile.anim && !timer });
     window.__hkScene = scene; // для автопроверок
     zoomable(wrap);
-    povSwitch(wrap, scene);
+    const badge = h('div.phase-badge');
+    wrap.append(badge);
+    const setPhase = ph => { scene.phase = ph; wrap.dataset.phase = ph; badge.textContent = PHASE[ph]; if (scene.onPhase) scene.onPhase(ph); };
+    scene.phase = 'watch'; // до вида «Глазами»: мини-карта сразу скрыта
+    const ps = povSwitch(wrap, scene);
+    setPhase('watch');
     const skip = h('button.skip', { onclick: () => cancelAll() }, 'Пропустить');
     wrap.append(skip);
     const zone = h('div');
@@ -79,9 +116,10 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
     skip.remove();
 
     // Предскажи: вопрос на чтение игры → показ, что произошло на самом деле → новый стоп-кадр
-    let readOk = null, readMs = null, reveal = [];
+    let readOk = null, readPartial = false, readMs = null, reveal = [];
     if (rd) {
       stage(1);
+      setPhase('pause');
       qEl.textContent = rd.text;
       const r0 = performance.now();
       const pick = await new Promise(res => {
@@ -91,7 +129,9 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
             box.classList.add('locked');
             box.querySelectorAll('.opt').forEach(x => x.classList.add('dim'));
             b.classList.remove('dim');
-            b.classList.add(test ? 'read-pick' : o.correct ? 'v-best' : 'v-bad');
+            // partial — возможный, но менее вероятный исход: половина зачёта, янтарный цвет (в контроле — нейтрально)
+            b.classList.add(test ? 'read-pick' : o.correct ? 'v-best' : o.partial ? 'read-partial' : 'v-bad');
+            fx(test ? 'tap' : o.correct ? 'best' : o.partial ? 'ok' : 'bad');
             res(o);
           } }, o.label);
           box.append(b);
@@ -100,12 +140,14 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       });
       readMs = Math.round(performance.now() - r0);
       readOk = !!pick.correct;
+      readPartial = !readOk && !!pick.partial;
       if (!test) {
         const right = rd.options.find(o => o.correct);
-        zone.append(h('p.read-fb.' + (readOk ? 'yes' : 'no'), h('b', readOk ? 'Прочитал верно.' : 'Не так.'),
-          readOk ? pick.explain : `${right.label}. ${right.explain}`));
+        zone.append(h('p.read-fb.' + (readOk ? 'yes' : readPartial ? 'part' : 'no'), h('b', readOk ? 'Прочитал верно.' : readPartial ? 'Возможно, но вероятнее другое.' : 'Не так.'),
+          readOk ? pick.explain : readPartial ? `${pick.explain ? pick.explain + ' ' : ''}Вероятнее: ${right.label.toLowerCase()}. ${right.explain}` : `${right.label}. ${right.explain}`));
       }
       reveal = rd.reveal || [];
+      setPhase('watch');
       await scene.play(reveal);
       if (rd.caption && !test) wrap.append(h('div.read-cap', rd.caption));
       await new Promise(res => setTimeout(res, test ? 300 : 700));
@@ -114,7 +156,12 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       zone.querySelector('.opts').remove();
       stage(2);
       qEl.textContent = card.question.text;
+    } else if (!timer && !ended) {
+      // стоп-кадр: ситуация замерла — короткая пауза перед вариантами
+      setPhase('pause');
+      await new Promise(res => setTimeout(res, 450));
     }
+    setPhase('choose');
     const t0 = performance.now();
     let decided = false, clock = null;
     if (timer) {
@@ -135,30 +182,36 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       decided = true; clearTimeout(clock);
       const timeMs = Math.round(performance.now() - t0);
       const v = opt.id === 'timeout' ? 'bad' : verdictOf(card, variant, opt);
+      if (!test) fx(v === 'best' ? 'best' : v === 'bad' ? 'bad' : 'ok');
+      // осмотр в виде «Глазами»: кого увидел за время решения, сколько раз смотрел через плечо, открывал ли карту
+      const pv = ps && ps.pov;
+      const scan = pv ? { seen: [...pv.seenSet], glances: pv.glances, mapPeeks: scene.mapPeeks || 0 } : null;
       results.push(v);
       if (v !== 'best') errCards.push(card);
       inner.querySelector('.dots').replaceWith(dots());
       if (ended) return; // экран закрыт во время анимации — ничего не записываем
       if (!preview) {
-        if (!test) answer(keys[i], v); // контрольный срез не меняет интервалы повторения
+        if (!test && !mirrored) answer(keys[i], v); // контрольный срез и зеркальные варианты не меняют интервалы повторения
         logItem(session, { cardId: card.id, key: keys[i], variant: variant ? variant.key : null, deck: card.deck, phase: card.phase,
                            principle: card.principle, track: card.track || null, answer: opt.id, verdict: v, timeMs,
-                           ...(rd ? { read: readOk, readMs } : {}), ...extra });
+                           ...(rd ? { read: readOk, readMs, ...(readPartial ? { readPartial: true } : {}) } : {}), ...(scan || {}), ...(mirrored ? { mirrored: true } : {}), ...extra });
       }
       if (card.question.kind === 'tap' && !test) scene.showZones(card.options, opt.id, o => verdictOf(card, variant, o));
       wrap.querySelectorAll('.read-cap').forEach(n => n.remove());
+      setPhase('result');
       await scene.play(opt.moves || []);
       // последствия: соперники и партнёры реагируют на решение (в контрольном срезе — без подсказок)
       if (!test) await scene.play(respond(card, [reveal, opt.moves || []], v), 'sim');
       // «Почему?»: какой признак на льду делает лучшее решение лучшим (после ответа, до разбора)
       let whyOk = null;
       if (card.why && !test && !timer && !ended) {
-        whyOk = await askWhy(card.why);
+        whyOk = await askWhy(card.why, card);
         const it = session && session.items[session.items.length - 1];
         if (it && it.cardId === card.id && !ended) { it.why = whyOk; logTouch(session); }
       }
       if (ended) return;
-      result(card, variant, opt, v, timeMs, whyOk, rd ? readOk : null);
+      setPhase('review');
+      result(card, variant, opt, v, timeMs, whyOk, rd ? readOk : null, scan, readPartial);
     };
 
     if (card.question.kind === 'choice') {
@@ -170,6 +223,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
           box.querySelectorAll('.opt').forEach(x => x.classList.add('dim'));
           b.classList.remove('dim');
           b.classList.add(test ? 'read-pick' : 'v-' + verdictOf(card, variant, o)); // в контроле — без подсказки цветом
+          fx('tap');
           decide(o);
         } }, o.label);
         box.append(b);
@@ -281,12 +335,41 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
     btnOf.forEach(b => b.addEventListener('click', () => { if (scene.pickable || scene.onSpot) { scene.pickable = null; scene.onPick = null; scene.onSpot = null; if (!scene.pickedSpot) scene.spots = null; spotG.remove(); hint.remove(); } }));
   }
 
-  function askWhy(why) {
+  /* Кто из игроков назван в тексте варианта: ЛН / ПН / ЛЗ / ПЗ / Ц — партнёр с этой подписью; «их центр» — центр соперника. */
+  function whoIn(text, card) {
+    const lab = id => { const en = scene.ents[id]; const t = en && en.node.querySelector('text'); return t ? t.textContent : ''; };
+    const m = text.match(/(?<![А-Яа-яЁё])(ЛН|ПН|ЛЗ|ПЗ|Ц)(?![А-Яа-яЁё])/);
+    if (m && !/их\s+$/i.test(text.slice(0, m.index))) { const id = (card.us || []).find(e => !e.me && lab(e.id) === m[1]); if (id) return id.id; }
+    if (/(^|\s)их центр/i.test(text)) { const e = (card.them || []).find(x => x.role === 'C'); if (e) return e.id; }
+    return null;
+  }
+
+  function askWhy(why, card) {
     return new Promise(resolve => {
       const box = h('div.opts');
       const wrapBox = h('div.why-box', h('div.kicker', 'Почему?'), h('div.q', why.text), box);
+      // ответ «Почему?» касанием: если варианты называют разных игроков — можно ткнуть в игрока на сцене
+      const byId = new Map(), dupl = new Set(), btnOfW = new Map();
+      for (const o of why.options) { const id = card && whoIn(o.label, card); if (!id) continue; if (byId.has(id)) dupl.add(id); else byId.set(id, o); }
+      dupl.forEach(id => byId.delete(id));
+      let offPick = () => {};
+      if (byId.size >= 2) {
+        scene.picked = null;
+        const nodes = [];
+        const choose = id => { const o = byId.get(id); const b = o && btnOfW.get(o); if (b && !box.classList.contains('locked')) { scene.picked = id; b.click(); } };
+        scene.pickable = new Set(byId.keys()); scene.onPick = choose;
+        for (const id of byId.keys()) {
+          const n = scene.ents[id] && scene.ents[id].node; if (!n) continue;
+          n.classList.add('pickable'); n._pick = e => { e.stopPropagation(); choose(id); }; n.addEventListener('click', n._pick); nodes.push(n);
+        }
+        const hint = h('p.tap-pick', 'Можно ткнуть в игрока на сцене');
+        wrapBox.insertBefore(hint, box);
+        offPick = () => { scene.pickable = null; scene.onPick = null; nodes.forEach(n => { n.classList.remove('pickable'); n.removeEventListener('click', n._pick); }); hint.remove(); };
+      }
       shuffle([...why.options]).forEach((o, k) => {
         const b = h('button.opt', { 'data-k': LETTERS[k], onclick: () => {
+          offPick();
+          fx(o.correct ? 'best' : 'bad');
           box.classList.add('locked');
           box.querySelectorAll('.opt').forEach(x => x.classList.add('dim'));
           b.classList.remove('dim'); b.classList.add(o.correct ? 'v-best' : 'v-bad');
@@ -294,6 +377,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
           wrapBox.append(h('p.read-fb.' + (o.correct ? 'yes' : 'no'), h('b', o.correct ? 'Верно.' : 'Не то.'), o.correct ? o.explain : `${right.label}. ${right.explain}`));
           setTimeout(() => resolve(!!o.correct), 350);
         } }, o.label);
+        btnOfW.set(o, b);
         box.append(b);
       });
       inner.append(wrapBox);
@@ -301,14 +385,40 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
     });
   }
 
-  function result(card, variant, opt, v, timeMs, whyOk = null, readOk = null) {
+  /* Ключевые игроки для лучшего решения: кто в нём двигается, кому идёт передача, соперники у линии паса или у точки, куда еду. */
+  function keyPlayers(card, best) {
+    const ids = new Set(), meId = ((card.us || []).find(e => e.me) || {}).id;
+    if (!best) return ids;
+    const pre = card.read ? card.read.reveal || [] : [];
+    const { pos } = positions(card, [pre]);
+    const moves = best.moves || [];
+    const seg = (p, a, b) => { const vx = b.x - a.x, vy = b.y - a.y, L = vx * vx + vy * vy || 1; const t = Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / L)); return Math.hypot(p.x - a.x - vx * t, p.y - a.y - vy * t); };
+    let from = pos.puck;
+    for (const m of moves) {
+      if (m.who !== 'puck') { if (m.who !== meId && pos[m.who]) ids.add(m.who); continue; }
+      const t = { x: m.to[0], y: m.to[1] };
+      let rcv = null, bd = 3.5;
+      for (const e of card.us || []) { if (e.me || e.role === 'G' || !pos[e.id]) continue; const dd = Math.hypot(pos[e.id].x - t.x, pos[e.id].y - t.y); if (dd < bd) { bd = dd; rcv = e.id; } }
+      if (rcv) ids.add(rcv);
+      // соперники, которые могут перехватить эту передачу
+      (card.them || []).filter(e => e.role !== 'G' && from && seg(pos[e.id], from, t) < 3.5).forEach(e => ids.add(e.id));
+      from = t;
+    }
+    const mv = moves.find(m => m.who === meId);
+    if (mv) { const t = { x: mv.to[0], y: mv.to[1] }; (card.them || []).filter(e => e.role !== 'G' && Math.hypot(pos[e.id].x - t.x, pos[e.id].y - t.y) < 4).forEach(e => ids.add(e.id)); }
+    return ids;
+  }
+  const nameOf = id => { const en = scene && scene.ents[id]; const t = en && en.node.querySelector('text'); return (t && t.textContent) || (en && en.team === 'them' ? 'соперник' : 'партнёр'); };
+  const list = ids => { const names = ids.map(nameOf), opp = names.filter(n => n === 'соперник').length, rest = names.filter(n => n !== 'соперник'); return [...rest, ...(opp === 1 ? ['соперник'] : opp > 1 ? [`${opp} соперника`] : [])].join(', '); };
+
+  function result(card, variant, opt, v, timeMs, whyOk = null, readOk = null, scan = null, readPartial = false) {
     if (test) {
       // контроль: без разбора и без правильного ответа — чтобы срез можно было повторить честно
       inner.append(h('div.result', h('p.muted', 'Ответ принят.'),
         h('button.btn.primary.block', { onclick: () => { i++; i < keys.length ? show() : finish(); } }, i + 1 < keys.length ? 'Дальше' : 'Итоги')));
       return;
     }
-    const pts = itemPoints({ verdict: v, timeMs, why: whyOk, read: readOk });
+    const pts = itemPoints({ verdict: v, timeMs, why: whyOk, read: readOk, readPartial }) + (readPartial && itemPoints({ verdict: 'bad', readPartial: true }) === 1 ? 1 : 0); // частичный прогноз — +1 (если scoring ещё не учитывает)
     const pr = lib.principle[card.principle];
     const best = bestOf(card, variant);
     const next = h('button.btn.primary', { onclick: () => { i++; i < keys.length ? show() : finish(); } }, i + 1 < keys.length ? 'Дальше' : 'Итоги');
@@ -340,10 +450,25 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       if (items.length) link = h('div.links', h('div.kicker', 'Закрепить'), items[0],
         items.length > 1 ? h('details.link-more', h('summary', 'Ещё способы'), h('div.link-row', items.slice(1))) : null);
     }
+    // что игрок успел увидеть в виде «Глазами» за время решения; ключевые, которых не увидел, — красным на сцене
+    let scanEl = null;
+    if (scan) {
+      const key = [...keyPlayers(card, best)].filter(id => scene.ents[id]);
+      const seenK = key.filter(id => scan.seen.includes(id)), missed = key.filter(id => !scan.seen.includes(id));
+      scene.missed = new Set(missed);
+      missed.forEach(id => scene.ents[id].node.classList.add('missed'));
+      const others = scan.seen.filter(id => !key.includes(id) && id !== 'puck' && scene.ents[id]);
+      scanEl = h('div.scan-box',
+        h('div.kicker', 'Осмотр'),
+        h('p', h('b', 'Что ты успел увидеть: '), scan.seen.length ? list([...seenK, ...others]) : 'никого, кроме того, что было прямо перед тобой'),
+        missed.length ? h('p.scan-miss', h('b', 'Не увидел важных: '), list(missed), ' — отмечены красным на сцене. Посмотри через плечо до решения.') : key.length ? h('p.scan-ok', 'Все важные для лучшего решения игроки были у тебя перед глазами.') : null,
+        h('p.small.muted', `Взглядов через плечо: ${scan.glances}` + (scan.mapPeeks ? ` · открывал карту: ${scan.mapPeeks}` : '')));
+    }
     const box = h('div.result',
       h('div.verdict', h('span.tag.' + v, TAG[v]), preview ? null : h('span.plus', `+${pts}`)),
       h('p.explain', opt.id === 'timeout' ? 'Время вышло. На льду у тебя тоже нет лишней секунды — решай по первому взгляду.' : explainOf(card, variant, opt)),
       bestText,
+      scanEl,
       card.best_when ? h('p.when', h('b', 'Условия: '), card.best_when) : null,
       pr ? h('div.principle', h('b', pr.name), h('span', pr.line)) : null,
       card.cue ? h('p.cue', h('b', 'Куда смотреть: '), card.cue) : null,

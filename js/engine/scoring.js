@@ -21,7 +21,7 @@ export const RANKS = [
    Скорость в очки не входит — быстрый, но случайный ответ не должен выглядеть успехом.
    Время считается отдельно (medianTime) и только по верным ответам. */
 export function itemPoints(it) {
-  return (it.verdict === 'best' ? 10 : it.verdict === 'ok' ? 5 : it.verdict === 'risky' ? 3 : 1) + (it.read === true ? 3 : 0) + (it.why === true ? 2 : 0); // +3 прогноз, +2 «почему»
+  return (it.verdict === 'best' ? 10 : it.verdict === 'ok' ? 5 : it.verdict === 'risky' ? 3 : 1) + (it.read === true ? 3 : it.readPartial ? 1 : 0) + (it.why === true ? 2 : 0); // +3 прогноз (+1 вероятный, но не главный исход), +2 «почему»
 }
 
 /* Предугадывание: доля верных прогнозов в шаге «Предскажи» за 30 дней (вне контрольного среза). */

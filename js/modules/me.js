@@ -8,8 +8,8 @@ import { fx } from '../core/fx.js';
 import { RINKS } from '../engine/rink.js';
 import { syncStatus } from '../core/sync.js';
 import * as cards from './cards.js';
-import { holdoutCards, holdoutSet, keysOf } from '../content.js';
-import { play } from './play.js';
+import { holdoutCards, holdoutSet, keysOf, trainCards } from '../content.js';
+import { play, mirrorKey } from './play.js';
 import * as onice from './onice.js';
 
 export function render(view, rerender, cloud) {
@@ -40,13 +40,24 @@ export function render(view, rerender, cloud) {
     const last = tests[tests.length - 1];
     const days = last ? Math.floor((Date.now() - last.startedAt) / 864e5) : null;
     const ready = !last || days >= 28;
-    const pct = s => Math.round(s.items.filter(i => i.verdict === 'best').length / s.items.length * 100);
+    const isM = i => i.mirrored || String(i.key || i.cardId || '').endsWith('~m');
+    const pctOf = its => its.length ? Math.round(its.filter(i => i.verdict === 'best').length / its.length * 100) : null;
+    const pct = s => pctOf(s.items.filter(i => !isM(i))) ?? pctOf(s.items);
+    const mir = s => { const m = s.items.filter(isM); return m.length ? ` · зеркало ${m.filter(i => i.verdict === 'best').length}/${m.length}` : ''; };
     view.append(h('div.h2', 'Контрольный срез'),
       h('div.panel',
-        h('p.muted.small', { style: { marginTop: 0 } }, `${holdoutCards().length} ситуаций, которых нет в тренировках, в трёх наборах. Срезы идут по кругу: А, Б, В — каждый раз незнакомые эпизоды. Без подсказок и разборов — проверка, переносится ли мышление на новые ситуации.`),
-        tests.length ? h('div.list', tests.slice(-4).map(s => h('div.li', h('span', new Date(s.startedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) + (s.hset != null ? ` · набор ${'АБВ'[s.hset]}` : '')), h('span.r', pct(s) + '%')))) : null,
+        h('p.muted.small', { style: { marginTop: 0 } }, `${holdoutCards().length} ситуаций, которых нет в тренировках, в трёх наборах. Срезы идут по кругу: А, Б, В — каждый раз незнакомые эпизоды. Без подсказок и разборов — проверка, переносится ли мышление на новые ситуации. Плюс 4 знакомые ситуации в зеркальной расстановке (лево ↔ право): узнаёт ли он принцип, а не картинку.`),
+        tests.length ? h('div.list', tests.slice(-4).map(s => h('div.li', h('span', new Date(s.startedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) + (s.hset != null ? ` · набор ${'АБВ'[s.hset]}` : '')), h('span.r', pct(s) + '%' + mir(s))))) : null,
         h('button.btn.small' + (ready ? '.primary' : ''), { style: { marginTop: '12px' }, disabled: !ready,
-          onclick: () => { const k = tests.length % 3; play(holdoutSet(k).flatMap(keysOf), { module: 'test', test: true, hset: k, onDone: rerender }); } },
+          onclick: () => {
+            const k = tests.length % 3;
+            // перенос навыка: к незнакомым ситуациям — 4 знакомые, но в зеркальной расстановке (лево ↔ право)
+            const known = trainCards().filter(c => !c.variants && c.options && c.options.length > 1 && !c.me_hand);
+            for (let i = known.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [known[i], known[j]] = [known[j], known[i]]; }
+            const keys = [...holdoutSet(k).flatMap(keysOf), ...known.slice(0, 4).map(c => mirrorKey(c.id))];
+            for (let i = keys.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [keys[i], keys[j]] = [keys[j], keys[i]]; }
+            play(keys, { module: 'test', test: true, hset: k, onDone: rerender });
+          } },
           ready ? 'Пройти срез' : `Следующий — через ${28 - days} дн.`)));
   }
 

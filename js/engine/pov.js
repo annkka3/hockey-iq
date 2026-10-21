@@ -5,10 +5,14 @@
    (хват), согнуты ли колени. Над головой — подпись амплуа, как на схеме.
    Источник правды — Scene: позиции, направление корпуса и хват берутся из её сущностей каждый кадр. */
 import { fromScreen } from './rink.js';
-import { gripSprite, goalieImage, goaliePoseImage, GOALIE_UPM, ownStickImage, arenaImage, META, ready, preload } from './sprites.js';
+import { gripSprite, brakeSprite, goalieImage, goaliePoseImage, GOALIE_UPM, ownStickImage, arenaImage, META, ready, preload } from './sprites.js';
 import { stickPose, toWorld, STICK } from './stick.js';
 
 const EYE = 1.6, PITCH = 0.11, FOV = 80 * Math.PI / 180, NEAR = 0.35;
+const BRAKE_DECEL = 9;   // м/с² — торможение резче этого даёт «снег» из-под коньков
+const TURN_RATE = 3.5;   // рад/с — крутой поворот на скорости больше 3 м/с — тоже
+const SPRAY_MS = 380;    // сколько держится снежная пыль
+const GOALIE_DROP_MS = 160; // сколько показывается промежуточный кадр вратаря между стойкой и «бабочкой»
 const NS = 'http://www.w3.org/2000/svg';
 const KIT = {
   us: { jersey: '#1D4F8C', dark: '#0E2A4D', stripe: '#FFFFFF', pants: '#0B1626', helmet: '#123A66', glove: '#173E6B', pill: '#0F2D52' },
@@ -24,6 +28,8 @@ export class Pov {
     host.prepend(this.cv);
     this.ctx = this.cv.getContext('2d');
     this.follow = false; this.heading = null; this.glance = 0; this.seen = [];
+    this.seenSet = new Set(); this.glances = 0;      // кого игрок увидел за время решения и сколько раз смотрел через плечо
+    this.puckTrail = []; this.spray = {}; this.vel = {};
     this.cone = document.createElementNS(NS, 'path');
     this.cone.setAttribute('class', 'pov-cone');
     scene.svg.insertBefore(this.cone, scene.lEnt);
@@ -35,7 +41,7 @@ export class Pov {
     this.bindDrag();
     this.onPick = id => { if (this.scene.onPick) this.scene.onPick(id); }; // ответ касанием задаёт экран решения
     this.live = true;
-    const loop = () => { if (!this.live) return; if (!this.cv.isConnected && this._drawn) { this.destroy(); return; } this.draw(); this._drawn = true; requestAnimationFrame(loop); };
+    const loop = () => { if (!this.live) return; if (!this.cv.isConnected && this._drawn) { this.destroy(); return; } if (!document.hidden) { this.draw(); this._drawn = true; } requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
   }
 
@@ -96,6 +102,7 @@ export class Pov {
   shoulder(dir) {
     if (this._g) return;
     this._g = true;
+    if (this.deciding()) this.glances++;
     const t0 = performance.now(), A = dir * 1.75;
     const step = () => {
       const t = (performance.now() - t0) / 1000;
@@ -105,6 +112,11 @@ export class Pov {
     };
     requestAnimationFrame(step);
   }
+
+  /* Идёт ли решение (стоп-кадр с вопросом): что игрок видит в это время — и есть его осмотр. */
+  deciding() { const ph = this.scene.phase; return ph === 'pause' || ph === 'choose'; }
+  /* Вернуть взгляд по корпусу. */
+  lookAhead() { this.heading = null; this.glance = 0; }
 
   world(id) { const e = this.scene.ents[id]; return e ? fromScreen(e.pos, this.r) : null; }
 
@@ -283,6 +295,22 @@ export class Pov {
       const foot = P(it.p.x, it.p.y, 0);
       if (!foot) continue;
       if (it.id === 'puck') {
+        // след шайбы на скорости: последние ~0,35 с, если она летит быстрее 6 м/с
+        const tN = performance.now(), tr = this.puckTrail;
+        if (!tr.length || tr[tr.length - 1].x !== it.p.x || tr[tr.length - 1].y !== it.p.y) tr.push({ x: it.p.x, y: it.p.y, t: tN });
+        while (tr.length && tN - tr[0].t > 350) tr.shift();
+        if (tr.length > 1) {
+          const a0 = tr[0], a1 = tr[tr.length - 1], v = Math.hypot(a1.x - a0.x, a1.y - a0.y) / Math.max(0.016, (a1.t - a0.t) / 1000);
+          if (v > 6) {
+            ctx.save(); ctx.lineCap = 'round';
+            for (let q = 1; q < tr.length; q++) {
+              const A = P(tr[q - 1].x, tr[q - 1].y, 0.02), B = P(tr[q].x, tr[q].y, 0.02); if (!A || !B) continue;
+              ctx.strokeStyle = `rgba(20,30,45,${(0.35 * q / tr.length).toFixed(2)})`; ctx.lineWidth = Math.max(1.5 * dpr, 0.06 * f / B.d);
+              ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+            }
+            ctx.restore();
+          }
+        }
         const rr = Math.max(2.2 * dpr, 0.09 * f / it.d);
         ctx.fillStyle = 'rgba(5,10,16,.25)'; ctx.beginPath(); ctx.ellipse(foot.x, foot.y + rr * 0.3, rr * 1.4, rr * 0.5, 0, 0, 7); ctx.fill();
         ctx.fillStyle = '#05090F'; ctx.beginPath(); ctx.ellipse(foot.x, foot.y, rr, rr * 0.45, 0, 0, 7); ctx.fill();
@@ -304,6 +332,7 @@ export class Pov {
     v.addColorStop(0, 'rgba(4,8,14,.22)'); v.addColorStop(0.06, 'rgba(4,8,14,0)'); v.addColorStop(0.94, 'rgba(4,8,14,0)'); v.addColorStop(1, 'rgba(4,8,14,.22)');
     ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
     this.visible = seenNow.length; this.seen = seenNow;
+    if (this.deciding()) for (const id of seenNow) this.seenSet.add(id);
 
     // конус обзора на схеме
     const sc = this.scene.pt({ x: me.x, y: me.y });
@@ -339,7 +368,7 @@ export class Pov {
     if (en.goalie) {
       // позы — те же рисунки, что в броске (300 единиц = 1 м, коньки в (320, 588)): стойка, разворот к шайбе
       // под острым углом справа или слева, «бабочка», когда шайба на пятаке.
-      // Синие позы есть только в стойке спереди и сзади; со спины — тоже стойка.
+      // Синие позы — перекраска тех же рисунков; со спины — стойка.
       const M = META.goalie, out = p.y < this.r.L / 2 ? 1 : -1;
       let pose = 'stand', img, H = 1.5;
       if (pkW && cosA > 0) {
@@ -348,11 +377,18 @@ export class Pov {
         if (gy > 0 && gy < 4.5 && Math.abs(gx) < 3) pose = 'butterfly';
         else if (right && ang > 55) pose = 'q3r2';
         else if (right && ang > 28) pose = 'q3r';
+        else if (!right && ang > 55) pose = 'q3l2';
         else if (!right && ang > 28) pose = 'q3l';
       }
-      if (team === 'them' && cosA > 0) { img = goaliePoseImage(pose); if (pose === 'butterfly') H = 1.05; }
-      else img = goalieImage(team, cosA < 0);
-      const sc = team === 'them' && cosA > 0 ? k / GOALIE_UPM : (1.6 * k) / M.h;
+      // лицом к нам — позы (красные или синие); со спины — целый вратарь сзади (в стойке)
+      // переход стойка ↔ «бабочка» — коротко через промежуточный кадр «на полпути»
+      const gp = (this.gPose ||= {})[it.id], tNow = performance.now();
+      if (!gp || gp.pose !== pose) { const via = gp && ((gp.pose === 'butterfly') !== (pose === 'butterfly')); this.gPose[it.id] = { pose, t: tNow, via }; }
+      const g2 = this.gPose[it.id];
+      if (g2.via && tNow - g2.t < GOALIE_DROP_MS) { pose = 'drop'; }
+      if (cosA > 0) { img = goaliePoseImage(pose, team); if (pose === 'butterfly') H = 1.05; else if (pose === 'drop') H = 1.25; }
+      else img = goalieImage(team, true);
+      const sc = cosA > 0 ? k / GOALIE_UPM : (1.6 * k) / M.h;
       if (ready(img)) ctx.drawImage(img, foot.x - M.ax * sc, foot.y - M.ay * sc, M.w * sc, M.h * sc);
       this.boxes.push({ id: it.id, x0: foot.x - 0.6 * k, x1: foot.x + 0.6 * k, y0: foot.y - H * k, y1: foot.y, d: it.d });
       this.goaliePose = pose;
@@ -360,11 +396,35 @@ export class Pov {
     }
     // скорость по смене позиции между кадрами: едет — шаг катания вместо стойки боком
     const now = performance.now(), prev = (this.prevPos ||= {})[it.id];
-    const spd = prev && now - prev.t > 0 && now - prev.t < 400 ? Math.hypot(p.x - prev.x, p.y - prev.y) / ((now - prev.t) / 1000) : 0;
+    const dtS = prev ? (now - prev.t) / 1000 : 0;
+    const vx = prev && dtS > 0 && dtS < 0.4 ? (p.x - prev.x) / dtS : 0, vy = prev && dtS > 0 && dtS < 0.4 ? (p.y - prev.y) / dtS : 0;
     this.prevPos[it.id] = { x: p.x, y: p.y, t: now };
-    const view = cosA > 0.82 ? 'front' : cosA > 0.3 ? 'q3front' : cosA > -0.3 ? (spd > 1.2 ? 'stride' : 'side') : cosA > -0.82 ? 'q3back' : 'back';
+    // сглаженная скорость; резкое торможение или крутой поворот на скорости — короткий «снег» из-под коньков
+    const pv = this.vel[it.id] || { x: 0, y: 0 }, a = dtS > 0 && dtS < 0.4 ? Math.min(1, dtS * 10) : 0;
+    const sv = { x: pv.x + (vx - pv.x) * a, y: pv.y + (vy - pv.y) * a };
+    const spd = Math.hypot(sv.x, sv.y), pspd = Math.hypot(pv.x, pv.y);
+    const turn = pspd > 3 && spd > 3 ? Math.abs(Math.atan2(pv.x * sv.y - pv.y * sv.x, pv.x * sv.x + pv.y * sv.y)) / Math.max(0.016, dtS) : 0;
+    if (dtS > 0 && dtS < 0.4 && ((pspd > 3 && (pspd - spd) / dtS > BRAKE_DECEL) || turn > TURN_RATE)) this.spray[it.id] = { t: now, dir: pspd > 0.1 ? { x: pv.x / pspd, y: pv.y / pspd } : { x: fx, y: fy } };
+    this.vel[it.id] = sv;
+    const spr = this.spray[it.id], braking = spr && now - spr.t < SPRAY_MS;
+    if (braking) {
+      // снежная пыль: веер точек вперёд по ходу, гаснет за SPRAY_MS
+      const life = 1 - (now - spr.t) / SPRAY_MS;
+      ctx.save();
+      for (let q = 0; q < 9; q++) {
+        const ang = (q - 4) * 0.22, dx = spr.dir.x * Math.cos(ang) - spr.dir.y * Math.sin(ang), dy = spr.dir.x * Math.sin(ang) + spr.dir.y * Math.cos(ang);
+        const dist = 0.35 + 0.45 * ((q * 37) % 10) / 10, S = P(p.x + dx * dist, p.y + dy * dist, 0.05 + 0.1 * (q % 3) / 3);
+        if (!S) continue;
+        ctx.fillStyle = `rgba(255,255,255,${(0.85 * life).toFixed(2)})`; ctx.beginPath(); ctx.arc(S.x, S.y, Math.max(1.2 * dpr, 0.05 * k), 0, 7); ctx.fill();
+      }
+      ctx.restore();
+    }
+    // торможение и разворот — боком (корпус поперёк хода); едет — шаг катания
+    const view = cosA > 0.82 ? 'front' : cosA > 0.3 ? 'q3front' : cosA > -0.3 ? (braking ? 'side' : spd > 1.2 ? 'stride' : 'side') : cosA > -0.82 ? 'q3back' : 'back';
     const faceLeft = ahead ? ahead.x < foot.x : false;
-    const gs = gripSprite(team, view, hand, faceLeft, en.stickPose && en.stickPose.action, spd < 3), img = gs.img, mirror = gs.mirror, M = META.skater;
+    // резкая остановка в ракурсе сбоку / вполоборота — картинка хоккейной остановки (где она нарисована для этого хвата)
+    const br = braking && (view === 'side' || view === 'q3front' || view === 'stride') ? brakeSprite(team, hand, faceLeft) : null;
+    const gs = br || gripSprite(team, view, hand, faceLeft, en.stickPose && en.stickPose.action, spd < 3), img = gs.img, mirror = gs.mirror, M = META.skater;
     const hpx = 1.85 * k, sc = hpx / M.h; // рост в шлеме ~1,75 м (фигура 560 из 600 единиц холста)
     const toScr = ([gx, gy]) => ({ x: foot.x + (mirror ? M.ax - gx : gx - M.ax) * sc, y: foot.y + (gy - M.ay) * sc });
     // клюшка — модель (en.stickPose, как на схеме) + руки картинки: древко — прямая через верхнюю и нижнюю руку,
@@ -407,6 +467,11 @@ export class Pov {
     }
     if (!behind) stick();
     this.boxes.push({ id: it.id, x0: foot.x - 0.5 * k, x1: foot.x + 0.5 * k, y0: foot.y - 1.85 * k, y1: foot.y, d: it.d });
+    if (this.scene.missed && this.scene.missed.has(it.id)) {
+      // в разборе: ключевой игрок, которого ты не увидел во время решения
+      ctx.save(); ctx.strokeStyle = '#FF4D6A'; ctx.lineWidth = 2.5 * dpr; ctx.setLineDash([4 * dpr, 3 * dpr]);
+      ctx.beginPath(); ctx.ellipse(foot.x, foot.y, 0.75 * k, 0.22 * k, 0, 0, 7); ctx.stroke(); ctx.restore();
+    }
     if ((this.pickable && this.pickable.has(it.id)) || this.picked === it.id) {
       // кого можно выбрать касанием — пунктирное кольцо под ногами; выбранный — сплошное
       ctx.save(); ctx.strokeStyle = this.picked === it.id ? '#33C8EA' : 'rgba(51,200,234,.8)'; ctx.lineWidth = (this.picked === it.id ? 3.5 : 2) * dpr;

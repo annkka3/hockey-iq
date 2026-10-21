@@ -7,7 +7,12 @@
    — соперник у линии паса ставит в неё клюшку (крюк в линии, а не в погоне);
    — защитник соперника пятится, держа дистанцию с владельцем (гэп) между ним и своими воротами;
    — в нашей зоне второй форчекер заходит под углом со стороны центра, прижимая владельца к борту;
-   — у своих ворот свободный соперник смыкается на пятак со стороны шайбы.
+   — у своих ворот свободный соперник смыкается на пятак со стороны шайбы;
+   — третий наш игрок остаётся выше (страховка центра): между шайбой и своей синей, ближе к середине;
+   — смена опеки: если наш игрок проехал через зону соперника, ближайший к нему свободный соперник
+     подхватывает его, вставая со стороны своих ворот;
+   — потеря шайбы: наши свободные игроки, оказавшиеся выше шайбы, возвращаются (бэкчек) и встают
+     между ближайшим соперником без шайбы и своими воротами.
    Работает в авторских координатах карточки (метры, атака вверх), сам «Я» не двигается —
    его ход уже сделан выбором. Возвращает ходы в формате Scene.play(). */
 
@@ -19,6 +24,10 @@ const BACK = 3;     // м — сколько защитник успевает �
 const ANGLE = 1.6;  // м — смещение форчекера к центру от владельца: заход «снаружи внутрь», к борту
 const SLOT = 3.5;   // м — расстояние от линии ворот, где смыкается защита у пятака
 const LANE = 2.2;   // м — дальше этого от линии паса соперник клюшку в неё не дотянет (≈ рука + клюшка + шаг)
+const HIGH = 8;     // м — насколько страхующий третий игрок стоит ниже шайбы (к своей синей)
+const SWITCH = 3;   // м — проезд нашего игрока на такое расстояние и ближе к сопернику запускает смену опеки
+const GOALSIDE = 1.5; // м — где встаёт подхвативший опекун: на столько ближе к своим воротам, чем игрок
+const BACKCHECK = 6; // м — сколько успевает вернуться игрок после потери шайбы (лицом вперёд, разгон)
 /* Ближайшая к p точка отрезка a→b (линия передачи). */
 const onSegment = (p, a, b) => {
   const vx = b.x - a.x, vy = b.y - a.y, L = vx * vx + vy * vy || 1;
@@ -72,7 +81,8 @@ export function respond(card, moveLists, verdict) {
   const free = id => id !== meId && !moved.has(id);
   const P = pos.puck;
   const out = [];
-  const push = (who, to, extra = {}) => { if (to && d(pos[who], to) > 0.6) { out.push({ who, to: [to.x, to.y], kind: 'skate', ...extra }); pos[who] = to; } };
+  const done = new Set(); // каждый игрок получает не больше одного хода реакции
+  const push = (who, to, extra = {}) => { if (to && !done.has(who) && d(pos[who], to) > 0.6) { out.push({ who, to: [to.x, to.y], kind: 'skate', ...extra }); pos[who] = to; done.add(who); } };
 
   // кто владеет шайбой
   let carrier = null, cd = 1.6;
@@ -128,6 +138,17 @@ export function respond(card, moveLists, verdict) {
       const slot = clampIce({ x: Math.sign(P.x) * 1.2, y: 56 - SLOT });
       push(f2, approach(pos[f2], slot, 0.3, REACH));
     }
+    // 7. страховка: следующий свободный партнёр остаётся выше шайбы, ближе к центру (третий игрок «высоко»)
+    const third = mates.find(id => id !== helper && !done.has(id));
+    if (third && P.y > 26) push(third, approach(pos[third], clampIce({ x: P.x * 0.4, y: Math.max(24, P.y - HIGH) }), 0.5, REACH));
+    // 8. смена опеки: наш игрок проехал вариантом рядом с соперником — тот (если свободен) подхватывает его
+    for (const id of moved) {
+      if (team[id] !== 'us' || id === carrier || role[id] === 'G') continue;
+      const foe = skaters('them').filter(o => free(o) && !done.has(o)).sort((a, b) => d(pos[a], pos[id]) - d(pos[b], pos[id]))[0];
+      if (!foe || d(pos[foe], pos[id]) > SWITCH + REACH) continue;
+      const gs = clampIce({ x: pos[id].x * 0.9, y: pos[id].y + GOALSIDE }); // со стороны ворот соперника (они наверху)
+      push(foe, approach(pos[foe], gs, 0.3, REACH));
+    }
   } else if (carrier && team[carrier] === 'them') {
     // защита: наш ближайший свободный игрок прижимает владельца
     const ours = near(pos[carrier], skaters('us'));
@@ -142,6 +163,15 @@ export function respond(card, moveLists, verdict) {
     // его партнёр открывается в свободное место
     const theirs = near(pos[carrier], skaters('them')).filter(id => id !== carrier);
     if (theirs[0]) push(theirs[0], openSpot(pos, team, role, pos[carrier], pos[theirs[0]], 'them'));
+    // потеря шайбы: наши свободные игроки выше шайбы возвращаются и встают между соперником без шайбы и своими воротами
+    const back = skaters('us').filter(id => free(id) && !done.has(id) && pos[id].y > pos[carrier].y + 2).slice(0, 2);
+    const marks = skaters('them').filter(id => id !== carrier);
+    for (const id of back) {
+      const m = marks.filter(o => !done.has('m:' + o)).sort((a, b) => d(pos[a], goal) - d(pos[b], goal))[0];
+      const want = m ? clampIce({ x: pos[m].x * 0.85, y: Math.max(5, pos[m].y - GOALSIDE) }) : clampIce({ x: pos[id].x * 0.5, y: Math.max(8, pos[carrier].y - 4) });
+      if (m) done.add('m:' + m);
+      push(id, approach(pos[id], want, 0.4, BACKCHECK));
+    }
   } else {
     // ничья шайба: кто ближе по времени, тот и успевает; второй останавливается рядом
     const tOurs = Math.min(...ourAll.map(id => d(pos[id], P)));
