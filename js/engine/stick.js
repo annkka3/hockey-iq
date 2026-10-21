@@ -73,11 +73,21 @@ export function toBody(w, p, fw) {
   return { f: dx * fx + dy * fy, l: -dx * fy + dy * fx };
 }
 
-/* Действие игрока по карточке: у кого шайба — ведение, к кому идёт пас — приём, у соперника в линии — перехват. */
-export function actionOf(e, card, p, puck) {
-  if (e.action) return e.action;
-  if (puck && Math.hypot(puck.x - p.x, puck.y - p.y) < 1.3) return 'carry';
-  return 'ready';
+/* Действие игрока по карточке: у кого шайба — ведение; к кому идёт первая передача в ответах — приём
+   (крюк лицом к шайбе). Позиции — мировые (м), map — перевод точки карточки в мир. */
+export function actionOf(e, card, p, puck, map = q => q) {
+  if (e.action) return { action: e.action };
+  if (puck && Math.hypot(puck.x - p.x, puck.y - p.y) < 1.3) return { action: 'carry' };
+  const opts = (card && card.options) || [];
+  const ordered = [...opts.filter(o => o.verdict === 'best'), ...opts.filter(o => o.verdict !== 'best')];
+  for (const o of ordered) {
+    const mv = (o.moves || []).find(m => m.who === 'puck' && m.kind === 'pass');
+    if (!mv) continue;
+    const t = map({ x: mv.to[0], y: mv.to[1] });
+    if (Math.hypot(t.x - p.x, t.y - p.y) < 2.5 && puck) return { action: 'receive', from: puck };
+    break;
+  }
+  return { action: 'ready' };
 }
 
 function norm(a) { const L = Math.hypot(a.f, a.l) || 1; return v(a.f / L, a.l / L); }

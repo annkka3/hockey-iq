@@ -298,7 +298,7 @@ export class Pov {
     this.prevPos[it.id] = { x: p.x, y: p.y, t: now };
     const view = cosA > 0.82 ? 'front' : cosA > 0.3 ? 'q3front' : cosA > -0.3 ? (spd > 1.2 ? 'stride' : 'side') : cosA > -0.82 ? 'q3back' : 'back';
     const faceLeft = ahead ? ahead.x < foot.x : false;
-    const gs = gripSprite(team, view, hand, faceLeft), img = gs.img, mirror = gs.mirror, M = META.skater;
+    const gs = gripSprite(team, view, hand, faceLeft, en.stickPose && en.stickPose.action), img = gs.img, mirror = gs.mirror, M = META.skater;
     const hpx = 1.85 * k, sc = hpx / M.h; // рост в шлеме ~1,75 м (фигура 560 из 600 единиц холста)
     const toScr = ([gx, gy]) => ({ x: foot.x + (mirror ? M.ax - gx : gx - M.ax) * sc, y: foot.y + (gy - M.ay) * sc });
     // клюшка — модель (en.stickPose, как на схеме) + руки картинки: древко — прямая через верхнюю и нижнюю руку,

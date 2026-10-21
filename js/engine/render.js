@@ -180,9 +180,11 @@ export class Scene {
     let contact = null;
     if (stickWorld) { const w = mapPoint({ x: stickWorld[0], y: stickWorld[1] }, this.rink); contact = toBody(w, me, fw); }
     const pk = this.ents.puck ? fromScreen(this.ents.puck.home || this.ents.puck.pos, this.rink) : null;
-    const action = actionOf(en.data, this.card, me, pk);
+    const act = actionOf(en.data, this.card, me, pk, q => mapPoint(q, this.rink));
+    const action = act.action;
     if (!contact && action === 'carry' && pk) contact = toBody(pk, me, fw);
-    const sp = stickPose({ hand, action, contact });
+    const toward = act.from ? toBody(act.from, me, fw) : null;
+    const sp = stickPose({ hand, action, contact, toward });
     en.stickPose = sp;
     const K = 1.5, X = q => -q.l * K, Y = q => -q.f * K;
     en.stick.setAttribute('x1', X(sp.knob)); en.stick.setAttribute('y1', Y(sp.knob));

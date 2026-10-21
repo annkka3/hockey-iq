@@ -564,18 +564,18 @@ function runGame(mode, set, rerender) {
       if (hand) { const p0 = sil.find(q => q.id === hand); if (p0) { const b2 = box(p0, partShift); reach = { x: b2.x + b2.w / 2, y: b2.y + b2.h / 2 }; } }
       if (partShift && !hand) {
         const id = partShift.id;
-        pose = (id === 'pads' || id === 'legL' || id === 'legR') && partShift.u < 0 ? 'padL' : pose;
+        pose = (id === 'pads' || id === 'legL' || id === 'legR') ? (partShift.u < 0 ? 'padL' : 'padR') : pose;
       } else if (hand) {
         // поза, в которой рука ближе всего к точке сейва — ловушка ловит там, где шайба, а не выше или ниже
         const ppm0 = mpx * (body ? body.scale : 1);
-        const cands = fly ? ['butterfly', 'padL'] : ['stand', 'glove', 'blocker', 'q3r', 'q3r2', 'pushR'];
+        const cands = fly ? ['butterfly', 'padL', 'padR'] : ['stand', 'glove', 'blocker', 'q3r', 'q3r2', 'pushR', 'pushL'];
         let best = Infinity;
         for (const c of cands) {
           const [gx, gh] = GOALIE_HANDS[c][hand];
           const d = Math.hypot(cx + gx * ppm0 - reach.x, baseY - gh * ppm0 - reach.y);
           if (d < best) { best = d; pose = c; }
         }
-      } else if (moving > 0 && gState !== 'готов') pose = 'pushR';
+      } else if (moving !== 0 && gState !== 'готов') pose = moving > 0 ? 'pushR' : 'pushL';
       else if (!fly && lat > 50) pose = 'q3r2';
       else if (!fly && lat > 22) pose = 'q3r';
       const img = goaliePoseImage(pose), M = META.goalie;
