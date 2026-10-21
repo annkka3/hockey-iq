@@ -715,3 +715,8 @@ input.power::-webkit-slider-thumb { width: 30px; height: 30px; border: 3px solid
 .mini-map .rel-mark { fill: none; stroke: #FFC53D; stroke-width: .22; }
 .shot-extra { margin: 8px 0 0; padding-left: 18px; font-size: 13.5px; line-height: 1.45; color: var(--muted, #9FB3C8); }
 .shot-extra li { margin: 3px 0; }
+
+/* ответ касанием: места на льду, куда можно поехать */
+.tap-spot { fill: rgba(51,200,234,.12); stroke: #33C8EA; stroke-width: .18; stroke-dasharray: .5 .4; cursor: pointer; }
+.tap-spot:hover { fill: rgba(51,200,234,.25); }
+.tap-spot-k { font: 800 1.1px Unbounded, sans-serif; fill: #0F2D52; pointer-events: none; }

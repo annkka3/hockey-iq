@@ -75,6 +75,18 @@ await step('вид «Глазами»', async () => {
   await p.close();
 });
 
+/* 2б. Выбор места касанием: на схеме есть кольца мест, нажатие по кольцу засчитывается как ответ. */
+await step('место на льду касанием', async () => {
+  const p = await page({ pov: false });
+  await p.evaluate(async () => { const m = await import('/js/modules/play.js'); m.play(['u15-31'], { preview: true }); });
+  await p.waitForSelector('.tap-spot', { timeout: 8000 });
+  const n = await p.$$eval('.tap-spot', x => x.length);
+  if (n < 2) throw new Error('мест меньше двух: ' + n);
+  await p.$eval('.tap-spot', c => c.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  await p.waitForSelector('.opt.v-best, .opt.v-ok, .opt.v-bad, .opt.v-risky', { timeout: 5000 });
+  await p.close();
+});
+
 /* 3. Бросок: все режимы, новичок и профи — до результата. */
 for (const pro of [false, true]) await step(`бросок (${pro ? 'профи' : 'новичок'})`, async () => {
   const p = await page({ shotPro: pro });

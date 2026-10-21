@@ -2,6 +2,7 @@
    Один и тот же экран для тренировки дня, колод, режима матча и предпросмотра при ревью. */
 import { h, icon, toast, zoomable } from '../ui.js';
 import { Scene } from '../engine/render.js';
+import { mapPoint } from '../engine/rink.js';
 import { cancelAll, tween } from '../engine/anim.js';
 import { lib, parseKey, verdictOf, explainOf, bestOf } from '../content.js';
 import { state, answer, startSession, logItem, logTouch, finishSession } from '../core/state.js';
@@ -219,7 +220,17 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       if (map.has(id)) dup.add(id); else map.set(id, o);
     }
     dup.forEach(id => map.delete(id));
-    if (!map.size) return;
+    // «куда поеду»: у вариантов без передачи партнёру — конечная точка моего первого хода; места должны различаться
+    const used = new Set(map.values()), spots = [];
+    for (const o of card.options || []) {
+      if (used.has(o) || !meId) continue;
+      const mv = (o.moves || []).find(m => m.who === meId && (!m.kind || m.kind === 'skate'));
+      if (!mv) continue;
+      const w = mapPoint({ x: mv.to[0], y: mv.to[1] }, scene.rink);
+      spots.push({ id: o.id, o, x: w.x, y: w.y, card: { x: mv.to[0], y: mv.to[1] } });
+    }
+    const far = spots.filter(a => spots.every(b => a === b || Math.hypot(a.x - b.x, a.y - b.y) >= 3.2));
+    if (!map.size && !far.length) return;
     const nodes = [];
     const pick = id => {
       const o = map.get(id);
@@ -230,7 +241,30 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       if (b && !b.closest('.locked')) b.click();
       off();
     };
-    const off = () => { scene.pickable = null; scene.onPick = null; nodes.forEach(([, n]) => { n.classList.remove('pickable'); n.removeEventListener('click', n._pick); }); hint.remove(); };
+    const off = () => { scene.pickable = null; scene.onPick = null; scene.onSpot = null; scene.spots = scene.pickedSpot ? far.filter(q => q.id === scene.pickedSpot).map(q => ({ id: q.id, x: q.x, y: q.y })) : null; spotG.remove(); nodes.forEach(([, n]) => { n.classList.remove('pickable'); n.removeEventListener('click', n._pick); }); hint.remove(); };
+    // места: на схеме — кольца в слое зон, нажатие по льду рядом с кольцом выбирает вариант; в виде «Глазами» — то же через обратную проекцию
+    const pickSpot = w => {
+      let best = null, bd = 2.6;
+      for (const q of far) { const d = Math.hypot(q.x - w.x, q.y - w.y); if (d < bd) { bd = d; best = q; } }
+      if (!best) return;
+      scene.pickedSpot = best.id;
+      const b = btnOf.get(best.o);
+      if (b && !b.closest('.locked')) b.click();
+      off();
+    };
+    const NS = 'http://www.w3.org/2000/svg', spotG = document.createElementNS(NS, 'g');
+    spotG.setAttribute('class', 'tap-spots');
+    for (const q of far) {
+      const c = scene.pt(q.card), ci = document.createElementNS(NS, 'circle');
+      ci.setAttribute('cx', c.x); ci.setAttribute('cy', c.y); ci.setAttribute('r', 1.6); ci.setAttribute('class', 'tap-spot');
+      ci.addEventListener('click', e => { e.stopPropagation(); pickSpot(q); });
+      spotG.append(ci);
+      const k = (btnOf.get(q.o) || {}).dataset?.k;
+      if (k) { const tx = document.createElementNS(NS, 'text'); tx.setAttribute('x', c.x); tx.setAttribute('y', c.y + 0.45); tx.setAttribute('class', 'tap-spot-k'); tx.setAttribute('text-anchor', 'middle'); tx.textContent = k; spotG.append(tx); }
+    }
+    scene.lZones.append(spotG);
+    scene.spots = far.map(q => ({ id: q.id, x: q.x, y: q.y, k: (btnOf.get(q.o) || {}).dataset?.k || '' }));
+    scene.onSpot = far.length ? pickSpot : null;
     scene.pickable = new Set(map.keys());
     scene.onPick = pick;
     for (const id of map.keys()) {
@@ -241,10 +275,10 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       n.addEventListener('click', n._pick);
       nodes.push([id, n]);
     }
-    const hint = h('p.tap-pick', 'Можно ткнуть в партнёра на сцене');
+    const hint = h('p.tap-pick', map.size && far.length ? 'Можно ткнуть в партнёра или в место на льду' : map.size ? 'Можно ткнуть в партнёра на сцене' : 'Можно ткнуть в место на льду, куда поедешь');
     zone.prepend(hint);
     // ответ кнопкой — касание больше не нужно
-    btnOf.forEach(b => b.addEventListener('click', () => { if (scene.pickable) { scene.pickable = null; scene.onPick = null; hint.remove(); } }));
+    btnOf.forEach(b => b.addEventListener('click', () => { if (scene.pickable || scene.onSpot) { scene.pickable = null; scene.onPick = null; scene.onSpot = null; if (!scene.pickedSpot) scene.spots = null; spotG.remove(); hint.remove(); } }));
   }
 
   function askWhy(why) {

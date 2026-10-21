@@ -60,11 +60,24 @@ export class Pov {
       if (x0 != null && !moved && performance.now() - t0 < 500 && e.type === 'pointerup' && this.onPick) {
         const id = this.hitTest(e.clientX, e.clientY);
         if (id) { this.heading = h0; this.onPick(id); }
+        else if (this.scene.onSpot) { const w = this.iceAt(e.clientX, e.clientY); if (w) { this.heading = h0; this.scene.onSpot(w); } }
       }
       x0 = null;
     };
     this.cv.addEventListener('pointerup', up); this.cv.addEventListener('pointercancel', up);
     this.cv.addEventListener('dblclick', () => { this.heading = null; }); // двойное касание — вернуть взгляд по корпусу
+  }
+
+  /* Точка льда под точкой экрана (client px): обратная проекция луча из глаза на плоскость льда; null — выше горизонта. */
+  iceAt(cx, cy) {
+    const c = this.camState; if (!c) return null;
+    const r = this.cv.getBoundingClientRect();
+    const x = (cx - r.left) * this.cv.width / r.width, y = (cy - r.top) * this.cv.height / r.height;
+    const sx = (x - c.cx) / c.f, uy = -(y - c.cy) / c.f;
+    const den = -c.sp + uy * c.cp;            // «вверх» на единицу глубины луча
+    if (den >= -1e-4) return null;
+    const t = -EYE / den, dep = t * (c.cp + uy * c.sp), side = t * sx;
+    return { x: c.me.x + dep * c.fx + side * c.rx, y: c.me.y + dep * c.fy + side * c.ry };
   }
 
   /* Кто на сцене под точкой экрана (client px): по прямоугольникам фигур последнего кадра, ближний к камере. */
@@ -119,6 +132,7 @@ export class Pov {
     };
     const proj = c => ({ x: cx + f * c.s / c.d, y: cy - f * c.u / c.d });
     const P = (x, y, z) => { const c = cam(x, y, z); return c.d < NEAR ? null : { ...proj(c), d: c.d }; };
+    this.camState = { me, fx, fy, rx, ry, f, cx, cy, cp, sp };
     const ctx = this.ctx;
     const fillPoly = (pts3, fill, stroke, lw) => {
       const c = clip(pts3.map(p => cam(p[0], p[1], p[2] || 0)));
@@ -235,6 +249,18 @@ export class Pov {
       fillPoly([[s.a[0], s.a[1], 1.07], [s.b[0], s.b[1], 1.07], [s.b[0], s.b[1], 2.4], [s.a[0], s.a[1], 2.4]], 'rgba(190,225,255,.10)', 'rgba(220,240,255,.18)', 0.4);
       line([s.a[0], s.a[1], 1.07], [s.b[0], s.b[1], 1.07], '#F2C230', 2);
       line([s.a[0], s.a[1], 1.07], [s.a[0], s.a[1], 2.4], 'rgba(220,235,250,.35)', 1);
+    }
+
+    // места на льду, которые можно выбрать касанием (ответ «куда поеду»): пунктирный круг, выбранное — сплошной
+    for (const sp0 of this.scene.spots || []) {
+      const picked = this.scene.pickedSpot === sp0.id, R = 1.6, pts = [];
+      for (let k = 0; k < 28; k++) { const a = k / 28 * 2 * Math.PI; pts.push(P(sp0.x + R * Math.cos(a), sp0.y + R * Math.sin(a), 0.01)); }
+      if (pts.some(q => !q)) continue;
+      ctx.save(); ctx.strokeStyle = picked ? '#33C8EA' : 'rgba(51,200,234,.85)'; ctx.fillStyle = picked ? 'rgba(51,200,234,.28)' : 'rgba(51,200,234,.10)';
+      ctx.lineWidth = (picked ? 3.5 : 2) * dpr; if (!picked) ctx.setLineDash([6 * dpr, 5 * dpr]);
+      ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+      const c0 = P(sp0.x, sp0.y, 0.01);
+      if (sp0.k && c0) pill(ctx, c0.x, c0.y - 0.6 * f / c0.d, sp0.k, picked ? '#0077A8' : 'rgba(9,24,39,.75)', f / c0.d, dpr); // буква варианта над местом
     }
 
     // игроки и шайба — от дальних к ближним
