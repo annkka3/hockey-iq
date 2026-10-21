@@ -94,6 +94,25 @@ await step('осмотр и зеркало', async () => {
   await p.close();
 });
 
+/* 2а. Карточка «нажми, куда поедешь» в виде «Глазами»: касание по льду на сцене даёт ответ, карта при этом не открывается. */
+await step('ответ касанием по льду в виде «Глазами»', async () => {
+  const p = await page({ pov: true });
+  await p.evaluate(async () => { const m = await import('/js/modules/play.js'); m.play(['u15-26'], { preview: true }); });
+  await p.waitForFunction(() => document.querySelector('.rink-wrap') && document.querySelector('.rink-wrap').dataset.phase === 'choose' && window.__hkPov && window.__hkPov.camState, null, { timeout: 10000 });
+  const z = await p.evaluate(async () => { const c = await import('/js/content.js'); return c.lib.cards.find(x => x.id === 'u15-26').options.find(o => o.verdict === 'best').zone; });
+  // повернуть взгляд на место и подождать кадр
+  await p.evaluate(z => { const pov = window.__hkPov, c = pov.camState; pov.heading = Math.atan2(z.x - c.me.x, z.y - c.me.y); }, z);
+  await p.waitForTimeout(300);
+  const pt = await p.evaluate(z => { const pov = window.__hkPov, c = pov.camState; const dx = z.x - c.me.x, dy = z.y - c.me.y, dep = dx * c.fx + dy * c.fy, up = -1.6;
+    const d = dep * c.cp - up * c.sp, s = dx * c.rx + dy * c.ry, u = dep * c.sp + up * c.cp; const r = pov.cv.getBoundingClientRect();
+    return { x: r.left + (c.cx + c.f * s / d) * r.width / pov.cv.width, y: r.top + (c.cy - c.f * u / d) * r.height / pov.cv.height }; }, z);
+  await p.mouse.click(pt.x, pt.y);
+  await p.waitForSelector('.result, .why-box', { timeout: 15000 });
+  const peeks = await p.evaluate(() => window.__hkScene.mapPeeks || 0);
+  if (peeks) throw new Error('касание по сцене засчитано как подсмотр карты');
+  await p.close();
+});
+
 /* 2б. Выбор места касанием: на схеме есть кольца мест, нажатие по кольцу засчитывается как ответ. */
 await step('место на льду касанием', async () => {
   const p = await page({ pov: false });

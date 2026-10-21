@@ -30,3 +30,9 @@
 .ent.picked-wrong .body { stroke: #FF4D6A; stroke-width: .16; }
 
 .drill-expo { margin-top: 10px; text-align: center; }
+
+/* «Открытый игрок»: линии паса в разборе */
+.scan-lane { stroke-width: .22; stroke-linecap: round; stroke-dasharray: .6 .45; }
+.scan-lane.open { stroke: #2EE59D; }
+.scan-lane.blocked { stroke: #FF4D6A; }
+.scan-lane.best { stroke-width: .38; stroke-dasharray: none; }

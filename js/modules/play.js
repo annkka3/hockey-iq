@@ -235,7 +235,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
       const hint = h('div.tap-hint', 'Нажми, куда поедешь');
       wrap.append(hint);
       let done = false;
-      scene.onTap(p => {
+      const onPoint = p => {
         if (done) return;
         let o = scene.pickZone(p, card.options);
         if (!o) {
@@ -245,12 +245,15 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
             if (d < bd && d < 6) { bd = d; o = x; }
           }
         }
-        if (!o) { toast('Выбери место ближе к игре'); scene.lFx.innerHTML = ''; return; }
+        if (!o) { toast('Выбери место ближе к игре'); scene.lFx.innerHTML = ''; scene.tapMark = null; return; }
         done = true;
         hint.remove();
-        scene.offTap();
+        scene.offTap(); scene.onIceTap = null;
         decide(o, { tap: [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10] });
-      });
+      };
+      scene.onTap(onPoint);
+      // в виде «Глазами» — касание по льду на сцене: точка льда под пальцем (обратная проекция), без открытия карты
+      scene.onIceTap = w => { scene.tapMark = w; onPoint({ x: w.x, y: w.y }); };
     }
   }
 
@@ -418,7 +421,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
         h('button.btn.primary.block', { onclick: () => { i++; i < keys.length ? show() : finish(); } }, i + 1 < keys.length ? 'Дальше' : 'Итоги')));
       return;
     }
-    const pts = itemPoints({ verdict: v, timeMs, why: whyOk, read: readOk, readPartial }) + (readPartial && itemPoints({ verdict: 'bad', readPartial: true }) === 1 ? 1 : 0); // частичный прогноз — +1 (если scoring ещё не учитывает)
+    const pts = itemPoints({ verdict: v, timeMs, why: whyOk, read: readOk, readPartial }); // частичный прогноз — +1 считает scoring
     const pr = lib.principle[card.principle];
     const best = bestOf(card, variant);
     const next = h('button.btn.primary', { onclick: () => { i++; i < keys.length ? show() : finish(); } }, i + 1 < keys.length ? 'Дальше' : 'Итоги');

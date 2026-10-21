@@ -1,8 +1,8 @@
 /* Вид «Глазами»: та же ситуация от лица «Я», в стиле 2,5D-мультфильма.
-   Камера на уровне глаз (1,6 м), слегка наклонена ко льду, поле зрения 90°: что за плечами — не видно,
-   нужно повернуть голову (палец или «через плечо»). Арена: трибуны, стекло, рекламные борта, отражения на льду.
-   Хоккеисты — объёмные фигуры из проекций реальных точек тела: видно, куда развёрнут корпус, на какой стороне крюк
-   (хват), согнуты ли колени. Над головой — подпись амплуа, как на схеме.
+   Камера на уровне глаз (1,6 м), слегка наклонена ко льду, поле зрения 80°: что за плечами — не видно,
+   нужно повернуть голову (палец или «через плечо»). Арена: фон-панорама, стекло, рекламные борта, лёд с разметкой.
+   Хоккеисты — иллюстрированные спрайты (ракурс по развороту корпуса относительно камеры, поза по действию),
+   закреплённые точкой между коньками; клюшка рисуется по модели stick.js. Над головой — подпись амплуа, как на схеме.
    Источник правды — Scene: позиции, направление корпуса и хват берутся из её сущностей каждый кадр. */
 import { fromScreen } from './rink.js';
 import { gripSprite, brakeSprite, goalieImage, goaliePoseImage, GOALIE_UPM, ownStickImage, arenaImage, META, ready, preload } from './sprites.js';
@@ -27,7 +27,7 @@ export class Pov {
     this.cv.className = 'pov-cv';
     host.prepend(this.cv);
     this.ctx = this.cv.getContext('2d');
-    this.follow = false; this.heading = null; this.glance = 0; this.seen = [];
+    this.heading = null; this.glance = 0; this.seen = [];
     this.seenSet = new Set(); this.glances = 0;      // кого игрок увидел за время решения и сколько раз смотрел через плечо
     this.puckTrail = []; this.spray = {}; this.vel = {};
     this.cone = document.createElementNS(NS, 'path');
@@ -54,24 +54,32 @@ export class Pov {
   bindDrag() {
     let x0 = null, h0 = 0, y0 = 0, t0 = 0, moved = false;
     this.cv.style.touchAction = 'none';
-    this.cv.addEventListener('pointerdown', e => { x0 = e.clientX; y0 = e.clientY; t0 = performance.now(); moved = false; h0 = this.heading ?? 0; this.cv.setPointerCapture(e.pointerId); });
+    this.cv.addEventListener('pointerdown', e => { x0 = e.clientX; y0 = e.clientY; t0 = performance.now(); moved = false; h0 = this.heading ?? 0; this._dragGlance = false; this.cv.setPointerCapture(e.pointerId); });
     this.cv.addEventListener('pointermove', e => {
       if (x0 == null) return;
       const dx = e.clientX - x0;
       if (Math.abs(dx) > 6 || Math.abs(e.clientY - y0) > 6) moved = true;
-      if (Math.abs(dx) > 3) { this.follow = false; this.heading = h0 - dx / this.cv.clientWidth * FOV; if (this.onTurn) this.onTurn(); }
+      if (Math.abs(dx) > 3) {
+        this._back = null; this.heading = h0 - dx / this.cv.clientWidth * FOV;
+        // поворот пальцем дальше 60° от корпуса — это тоже взгляд через плечо (один на одно движение)
+        if (this._base != null && !this._dragGlance && Math.abs(angDiff(this.heading, this._base)) > Math.PI / 3) {
+          this._dragGlance = true; if (this.deciding()) this.glances++;
+        }
+        if (this.onTurn) this.onTurn();
+      }
     });
     const up = e => {
       // короткое касание без сдвига — выбор игрока на сцене (ответ касанием), а не поворот головы
-      if (x0 != null && !moved && performance.now() - t0 < 500 && e.type === 'pointerup' && this.onPick) {
+      if (x0 != null && !moved && performance.now() - t0 < 500 && e.type === 'pointerup') {
         const id = this.hitTest(e.clientX, e.clientY);
-        if (id) { this.heading = h0; this.onPick(id); }
+        if (id && this.onPick && this.scene.onPick) { this.heading = h0; this.onPick(id); }
         else if (this.scene.onSpot) { const w = this.iceAt(e.clientX, e.clientY); if (w) { this.heading = h0; this.scene.onSpot(w); } }
+        else if (this.scene.onIceTap) { const w = this.iceAt(e.clientX, e.clientY); if (w) { this.heading = h0; this.scene.onIceTap(w); } }
       }
       x0 = null;
     };
     this.cv.addEventListener('pointerup', up); this.cv.addEventListener('pointercancel', up);
-    this.cv.addEventListener('dblclick', () => { this.heading = null; }); // двойное касание — вернуть взгляд по корпусу
+    this.cv.addEventListener('dblclick', () => this.lookAhead()); // двойное касание — плавно вернуть взгляд по корпусу
   }
 
   /* Точка льда под точкой экрана (client px): обратная проекция луча из глаза на плоскость льда; null — выше горизонта. */
@@ -116,7 +124,7 @@ export class Pov {
   /* Идёт ли решение (стоп-кадр с вопросом): что игрок видит в это время — и есть его осмотр. */
   deciding() { const ph = this.scene.phase; return ph === 'pause' || ph === 'choose'; }
   /* Вернуть взгляд по корпусу. */
-  lookAhead() { this.heading = null; this.glance = 0; }
+  lookAhead() { if (this.heading != null) this._back = { from: this.heading, t0: performance.now() }; }
 
   world(id) { const e = this.scene.ents[id]; return e ? fromScreen(e.pos, this.r) : null; }
 
@@ -133,7 +141,14 @@ export class Pov {
     const meId = Object.keys(ents).find(id => ents[id].data && ents[id].data.me);
     if (!meId) return;
     const me = this.world(meId);
-    if (this.heading == null) this.heading = this.baseHeading(ents[meId], me);
+    const base = this.baseHeading(ents[meId], me);
+    this._base = base;
+    if (this.heading == null) this.heading = base;
+    if (this._back) { // плавный возврат взгляда к корпусу, 250 мс, с замедлением
+      const t = Math.min(1, (performance.now() - this._back.t0) / 250), e = 1 - (1 - t) * (1 - t);
+      this.heading = this._back.from + angDiff(base, this._back.from) * e;
+      if (t >= 1) { this._back = null; this.heading = base; }
+    }
     const hd = this.heading + this.glance;
     const fx = Math.sin(hd), fy = Math.cos(hd), rx = Math.cos(hd), ry = -Math.sin(hd);
     const W = this.cv.width, H = this.cv.height, f = (W / 2) / Math.tan(FOV / 2), cx = W / 2, cy = H * 0.36;
@@ -273,6 +288,13 @@ export class Pov {
       ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
       const c0 = P(sp0.x, sp0.y, 0.01);
       if (sp0.k && c0) pill(ctx, c0.x, c0.y - 0.6 * f / c0.d, sp0.k, picked ? '#0077A8' : 'rgba(9,24,39,.75)', f / c0.d, dpr); // буква варианта над местом
+    }
+
+    // отметка касания по льду (ответ «куда поеду» в виде «Глазами»)
+    if (this.scene.tapMark) {
+      const q = P(this.scene.tapMark.x, this.scene.tapMark.y, 0.01);
+      if (q) { const rr = Math.max(6 * dpr, 0.5 * f / q.d); ctx.save(); ctx.strokeStyle = '#33C8EA'; ctx.lineWidth = 3 * dpr; ctx.fillStyle = 'rgba(51,200,234,.25)';
+        ctx.beginPath(); ctx.ellipse(q.x, q.y, rr, rr * 0.35, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore(); }
     }
 
     // игроки и шайба — от дальних к ближним
@@ -508,6 +530,7 @@ export class Pov {
   destroy() { this.live = false; window.removeEventListener('resize', this._resize); this.cv.remove(); this.cone.remove(); }
 }
 
+const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
 const cut = (A, B) => { const t = (NEAR - A.d) / (B.d - A.d); return { d: NEAR, s: A.s + (B.s - A.s) * t, u: A.u + (B.u - A.u) * t }; };
 const numberOf = id => { let x = 3; for (const ch of String(id)) x = (x * 33 + ch.charCodeAt(0)) >>> 0; return String(2 + (x % 97)); };
 

@@ -224,6 +224,15 @@ export const expo = () => state.profile.expo ?? 'auto';
 
 /* ---------- Открытый игрок: кто из партнёров свободнее всех ---------- */
 function freeness(f, foes) { return Math.min(...foes.map(o => Math.hypot(o.x - f.x, o.y - f.y))); }
+/* Шайба у «Я»: где он стоит в «Открытом игроке» — ниже всех партнёров по центру (пас вперёд). */
+const scanMe = friends => ({ x: 0, y: Math.max(5, Math.min(...friends.map(f => f.y)) - 9) });
+/* Линия паса от шайбы к партнёру перекрыта, если соперник ближе 1,3 м к отрезку (на 10–95 % пути). */
+function laneBlocked(from, f, foes) {
+  const vx = f.x - from.x, vy = f.y - from.y, L = vx * vx + vy * vy || 1;
+  return foes.some(o => { const t = ((o.x - from.x) * vx + (o.y - from.y) * vy) / L; if (t < 0.1 || t > 0.95) return false; return Math.hypot(o.x - (from.x + vx * t), o.y - (from.y + vy * t)) < 1.3; });
+}
+/* Свободен = далеко от опеки И линия паса к нему открыта: перекрытый партнёр не свободен, как бы далеко ни был опекун. */
+const scanScore = (f, foes, me) => (laneBlocked(me, f, foes) ? 0 : freeness(f, foes));
 
 function genScan(r) {
   // три партнёра, соперники опекают двоих плотно, третий свободен с запасом
@@ -243,7 +252,7 @@ function genScan(r) {
     const a = Math.random() * 7;
     foes.push({ x: Math.max(-13.5, Math.min(13.5, free.x + Math.cos(a) * far)), y: Math.max(3, Math.min(57, free.y + Math.sin(a) * far)) });
     if (r >= 4) foes.push({ x: rnd(-12, 12), y: rnd(8, 52) });
-    const fr = friends.map(f => freeness(f, foes));
+    const me = scanMe(friends), fr = friends.map(f => scanScore(f, foes, me));
     const best = fr.indexOf(Math.max(...fr));
     const sorted = [...fr].sort((x, y) => y - x);
     if (best === ans && sorted[0] - sorted[1] > (r < 3 ? 2.5 : 1.5)) return { friends, foes, answer: ans };
@@ -254,14 +263,15 @@ function genScan(r) {
 async function scan(c) {
   const r = c.round();
   const pat = r < 2 && lib.scans.length ? lib.scans[(Math.random() * lib.scans.length) | 0] : genScan(r);
-  const fr0 = pat.friends.map(x => freeness(x, pat.foes));
+  const me = scanMe(pat.friends);
+  const fr0 = pat.friends.map(x => scanScore(x, pat.foes, me));
   pat.answer = fr0.indexOf(Math.max(...fr0));
   const show = c.show(2.6, 0.8);
   const card = { title: 'Открытый игрок', view: 'full', question: { kind: 'choice' }, options: [],
-    us: pat.friends.map((f, i) => ({ id: 'f' + i, role: 'LW', label: f.label, x: f.x, y: f.y })),
-    them: pat.foes.map((f, i) => ({ id: 'e' + i, role: 'F', x: f.x, y: f.y })) };
+    us: [{ id: 'C', role: 'C', me: true, x: me.x, y: me.y }, ...pat.friends.map((f, i) => ({ id: 'f' + i, role: 'LW', label: f.label, x: f.x, y: f.y }))],
+    them: pat.foes.map((f, i) => ({ id: 'e' + i, role: 'F', x: f.x, y: f.y })), puck: { x: me.x + 0.5, y: me.y + 0.6 } };
   c.inner.innerHTML = '';
-  const title = h('div.q', 'Кто из партнёров свободнее всех?');
+  const title = h('div.q', 'Шайба у тебя. Кто из партнёров свободнее всех — и опека далеко, и линия паса открыта?');
   c.inner.append(c.top(), h('div.q-meta', 'Открытый игрок'), title);
   const wrap = h('div.rink-wrap'); c.inner.append(wrap);
   const sc = new Scene(wrap, card, { anim: false });
@@ -281,9 +291,14 @@ async function scan(c) {
     box.children[i].classList.add(ok ? 'v-best' : 'v-bad');
     box.children[pat.answer].classList.add('v-best');
     sc.svg.style.opacity = 1;
-    const ds = pat.friends.map(x => freeness(x, pat.foes));
+    const ds = pat.friends.map(x => freeness(x, pat.foes)), bl = pat.friends.map(x => laneBlocked(me, x, pat.foes));
+    // линии паса: зелёная — открыта, красная — соперник в линии
+    const NS = 'http://www.w3.org/2000/svg', a0 = sc.pt(me);
+    pat.friends.forEach((x, k) => { const b = sc.pt(x), ln = document.createElementNS(NS, 'line');
+      ln.setAttribute('x1', a0.x); ln.setAttribute('y1', a0.y); ln.setAttribute('x2', b.x); ln.setAttribute('y2', b.y);
+      ln.setAttribute('class', 'scan-lane ' + (bl[k] ? 'blocked' : 'open') + (k === pat.answer ? ' best' : '')); sc.lArrows.append(ln); });
     c.log(ok, { exposure: show });
-    c.inner.append(h('p.explain', `Ближайший соперник: ${pat.friends.map((x, k) => `${x.label} — ${ds[k].toFixed(1)} м`).join(', ')}. Свободнее всех ${pat.friends[pat.answer].label}: туда и пас, и открывание.`),
+    c.inner.append(h('p.explain', `${pat.friends.map((x, k) => `${x.label}: опека ${ds[k].toFixed(1)} м, линия паса ${bl[k] ? 'перекрыта' : 'открыта'}`).join('; ')}. Свободнее всех ${pat.friends[pat.answer].label}: опекун дальше всех и пас к нему проходит.`),
       h('button.btn.primary.block', { style: { marginTop: '14px' }, onclick: c.next }, 'Дальше'));
   } }, 'Игрок ' + f.label)));
   c.inner.append(box);
@@ -555,7 +570,7 @@ async function shoulder(c) {
   const sc = new Scene(wrap, card, { anim: false });
   let lastG = 0;
   const pov = new Pov(wrap, sc, { onTurn: () => { const n = clock(); if (n - lastG > 800) c.glance(); lastG = n; } }); // взгляд = поворот головы; серия кадров одного поворота — один взгляд
-  pov.follow = false; pov.heading = 0;
+  pov.heading = 0;
   // все едут: каждый партнёр со своим опекуном — одной скоростью, так что «свободный» остаётся свободным,
   // но картинка за плечом через секунду уже другая
   const drift = friends.map(() => { const a = Math.random() * 7, v = rnd(0.8, 2.2); return { vx: Math.cos(a) * v, vy: Math.sin(a) * v }; });
@@ -581,7 +596,7 @@ async function shoulder(c) {
   c.inner.append(bar);
   c.expose('.pov-cv, .pov-bar');
   await timerBar(c, c.show(3.6, 1.6) + 0.8);
-  if (!c.live.on) return;
+  if (!c.live.on) { clearInterval(watch); pov.destroy(); return; } // закрыли во время показа — таймер и цикл не оставляем
   clearInterval(watch); pov.destroy(); bar.remove();
   { const fr = friends.map(f => Math.min(...foes.map(o => Math.min(Math.hypot(o.x - f.x, o.y - f.y), laneGap(f, o) * 1.5)))); answer = fr.indexOf(Math.max(...fr)); }
   sc.svg.style.opacity = 0.05; wrap.classList.remove('pov-only');
