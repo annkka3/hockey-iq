@@ -227,6 +227,7 @@ main.view { padding: 4px 16px calc(112px + var(--safe-b)); }
   display: flex; justify-content: center;
 }
 .play-in { width: 100%; max-width: 560px; padding: calc(10px + var(--safe-t)) 16px calc(24px + var(--safe-b)); display: flex; flex-direction: column; min-height: 100%; }
+.play-in > * { flex-shrink: 0; } /* блоки не сжимаются — длинная подпись не налезает на вопрос */
 .play-top { display: flex; align-items: center; gap: 12px; height: 44px; }
 .x { width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--stroke); background: var(--panel); display: grid; place-items: center; cursor: pointer; flex: none; }
 .x svg { width: 18px; height: 18px; }

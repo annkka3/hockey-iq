@@ -176,18 +176,35 @@ export class Pov {
       const c = []; for (let k = 0; k < 12; k++) { const a = k / 12 * 2 * Math.PI; c.push([x + 0.3 * Math.cos(a), y + 0.3 * Math.sin(a)]); }
       fillPoly(c, '#E2283E');
     }
-    // вратарские и ворота с сеткой
+    // вратарские на льду; сами ворота — объёмные, рисуются вместе с игроками по глубине (ниже)
     for (const [gy, dir] of [[r.goalLine, -1], [L - r.goalLine, 1]]) {
       const cr = [];
       for (let k = 0; k <= 14; k++) { const a = Math.PI * k / 14; cr.push([Math.cos(a) * r.creaseR, gy - dir * Math.sin(a) * r.creaseR]); }
       fillPoly(cr, 'rgba(70,150,235,.45)', 'rgba(226,40,62,.8)', 1);
-      const hw = r.goalW / 2, back = gy + dir * r.goalD;
-      fillPoly([[-hw, back, 0], [hw, back, 0], [hw, gy + dir * 0.3, r.goalH], [-hw, gy + dir * 0.3, r.goalH]], 'rgba(255,255,255,.28)', 'rgba(255,255,255,.55)', 0.7);
-      for (let k = 1; k < 6; k++) { const x = -hw + k * hw / 3; line([x, back, 0], [x, gy + dir * 0.3, r.goalH], 'rgba(255,255,255,.35)', 0.6); }
-      fillPoly([[-hw, gy, 0], [-hw, back, 0], [-hw, gy + dir * 0.3, r.goalH], [-hw, gy, r.goalH]], 'rgba(255,255,255,.2)');
-      fillPoly([[hw, gy, 0], [hw, back, 0], [hw, gy + dir * 0.3, r.goalH], [hw, gy, r.goalH]], 'rgba(255,255,255,.2)');
-      line([-hw, gy, 0], [-hw, gy, r.goalH], '#E2283E', 4); line([hw, gy, 0], [hw, gy, r.goalH], '#E2283E', 4); line([-hw, gy, r.goalH], [hw, gy, r.goalH], '#E2283E', 4);
     }
+    // ворота: сетка (задняя стенка, боковины, крыша) с ячейками, красная рама; низ рамы на льду
+    const drawGoal = (gy, dir, k = 40) => {
+      const px = m => Math.max(0.6, m * k / dpr); // толщина в метрах → пиксели на этой глубине
+      const hw = r.goalW / 2, D = r.goalD, Hg = r.goalH, b = gy + dir * D, mid = gy + dir * D * 0.45;
+      const NET = 'rgba(250,252,255,.62)', MESH = 'rgba(150,165,185,.75)';
+      const face = (pts, fill) => fillPoly(pts, fill, 'rgba(120,135,155,.6)', 0.6);
+      const mesh = (a, b2, c, d, n, m) => { // сетка ячеек на четырёхугольнике a-b-c-d
+        const lerp = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
+        for (let i = 1; i < n; i++) line(lerp(a, b2, i / n), lerp(d, c, i / n), MESH, px(0.008));
+        for (let j = 1; j < m; j++) line(lerp(a, d, j / m), lerp(b2, c, j / m), MESH, px(0.008));
+      };
+      // задняя стенка наклонна: от низа у заднего края к верху над серединой
+      const BL = [-hw, b, 0], BR = [hw, b, 0], TL = [-hw, mid, Hg], TR = [hw, mid, Hg];
+      const FL = [-hw, gy, 0], FR = [hw, gy, 0], FTL = [-hw, gy, Hg], FTR = [hw, gy, Hg];
+      face([BL, BR, TR, TL], NET); mesh(BL, BR, TR, TL, 12, 6);
+      face([FL, BL, TL, FTL], NET); mesh(FL, BL, TL, FTL, 5, 6);
+      face([FR, BR, TR, FTR], NET); mesh(FR, BR, TR, FTR, 5, 6);
+      face([FTL, FTR, TR, TL], 'rgba(250,252,255,.5)'); mesh(FTL, FTR, TR, TL, 12, 3);
+      // рама: низ на льду (белый с красным), стойки и перекладина — красные трубы
+      line(FL, BL, '#E2283E', px(0.05)); line(FR, BR, '#E2283E', px(0.05)); line(BL, BR, '#E2283E', px(0.05));
+      const tube = (a, c) => { line(a, c, '#9E1426', px(0.075)); line(a, c, '#E2283E', px(0.055)); };
+      tube(FL, FTL); tube(FR, FTR); tube(FTL, FTR);
+    };
     // борта с рекламой, стекло, жёлтый кант
     const ads = ['#1E5BD8', '#FFFFFF', '#E2283E', '#FFFFFF', '#0F2D52', '#FFFFFF', '#FFC53D', '#FFFFFF'];
     for (const s of segs) {
@@ -206,9 +223,14 @@ export class Pov {
       if (c.d < NEAR + 0.2) continue;
       items.push({ id, e: ents[id], p, d: c.d });
     }
+    for (const [gy, dir] of [[r.goalLine, -1], [L - r.goalLine, 1]]) {
+      const c = cam(0, gy + dir * r.goalD * 0.5, 0);
+      if (c.d > NEAR - 2) items.push({ id: 'goal' + dir, goal: [gy, dir], d: c.d });
+    }
     items.sort((a, b) => b.d - a.d);
     const labels = [], seenNow = [];
     for (const it of items) {
+      if (it.goal) { drawGoal(...it.goal, f / it.d); continue; }
       const foot = P(it.p.x, it.p.y, 0);
       if (!foot) continue;
       if (it.id === 'puck') {

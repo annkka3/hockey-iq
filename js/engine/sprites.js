@@ -50,6 +50,17 @@ export function skaterImage(team, view) {
    справа (умеренно / сильно), pushR — толчок вправо, padL — щиток выброшен влево по льду. */
 export const GOALIE_UPM = 300;
 export const GOALIE_POSES = ['stand', 'butterfly', 'glove', 'blocker', 'q3r', 'q3r2', 'pushR', 'padL'];
+/* Где в каждой позе ловушка и блин: метры от точки между коньками (вправо для смотрящего, вверх). */
+export const GOALIE_HANDS = {
+  stand: { glove: [0.44, 0.86], blocker: [-0.45, 0.72] },
+  butterfly: { glove: [0.43, 0.53], blocker: [-0.38, 0.45] },
+  glove: { glove: [0.51, 1.43], blocker: [-0.47, 0.68] },
+  blocker: { glove: [0.51, 0.83], blocker: [-0.49, 0.96] },
+  q3r: { glove: [0.45, 0.86], blocker: [-0.43, 0.76] },
+  q3r2: { glove: [0.51, 0.89], blocker: [-0.38, 0.8] },
+  pushR: { glove: [0.51, 0.72], blocker: [-0.47, 0.72] },
+  padL: { glove: [0.53, 0.85], blocker: [-0.38, 0.48] },
+};
 export function goaliePoseImage(pose) { return load('goalie-pose-' + (GOALIE_POSES.includes(pose) ? pose : 'stand')); }
 export function goalieImage(team, back) {
   return load(`goalie-${team === 'us' ? 'us' : 'them'}-${back ? 'back' : 'front'}`);

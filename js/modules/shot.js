@@ -4,7 +4,7 @@ import { RINKS, boardsPath } from '../engine/rink.js';
 import { drawRink } from '../engine/render.js';
 import { tween, cancelAll, ease } from '../engine/anim.js';
 import * as P from '../engine/shot.js';
-import { ownStickImage, arenaImage, skaterImage, goaliePoseImage, GOALIE_UPM, META, ready as imgReady, preload as preloadSprites } from '../engine/sprites.js';
+import { ownStickImage, arenaImage, skaterImage, goaliePoseImage, GOALIE_UPM, GOALIE_HANDS, META, ready as imgReady, preload as preloadSprites } from '../engine/sprites.js';
 import { state, startSession, logItem, finishSession, setProfile } from '../core/state.js';
 
 const R = RINKS.iihf;
@@ -554,10 +554,23 @@ function runGame(mode, set, rerender) {
       const lat = Math.atan2(S.x, P.GOAL.y - S.y) * 180 / Math.PI;      // >0 — бросок справа для смотрящего
       const moving = lastGx != null && Math.abs(cx - lastGx) > 0.5 * dpr ? Math.sign(cx - lastGx) : 0;
       lastGx = cx;
-      if (partShift) {
+      // точка, где модель остановила шайбу рукой (центр сдвинутой ловушки / блина), в пикселях
+      const hand = partShift && (partShift.id === 'glove' || partShift.id === 'blocker') ? partShift.id : null;
+      let reach = null;
+      if (hand) { const p0 = sil.find(q => q.id === hand); if (p0) { const b2 = box(p0, partShift); reach = { x: b2.x + b2.w / 2, y: b2.y + b2.h / 2 }; } }
+      if (partShift && !hand) {
         const id = partShift.id;
-        pose = id === 'glove' ? 'glove' : id === 'blocker' ? 'blocker'
-          : (id === 'pads' || id === 'legL' || id === 'legR') && partShift.u < 0 ? 'padL' : pose;
+        pose = (id === 'pads' || id === 'legL' || id === 'legR') && partShift.u < 0 ? 'padL' : pose;
+      } else if (hand) {
+        // поза, в которой рука ближе всего к точке сейва — ловушка ловит там, где шайба, а не выше или ниже
+        const ppm0 = mpx * (body ? body.scale : 1);
+        const cands = fly ? ['butterfly', 'padL'] : ['stand', 'glove', 'blocker', 'q3r', 'q3r2', 'pushR'];
+        let best = Infinity;
+        for (const c of cands) {
+          const [gx, gh] = GOALIE_HANDS[c][hand];
+          const d = Math.hypot(cx + gx * ppm0 - reach.x, baseY - gh * ppm0 - reach.y);
+          if (d < best) { best = d; pose = c; }
+        }
       } else if (moving > 0 && gState !== 'готов') pose = 'pushR';
       else if (!fly && lat > 50) pose = 'q3r2';
       else if (!fly && lat > 22) pose = 'q3r';
@@ -565,7 +578,10 @@ function runGame(mode, set, rerender) {
       // масштаб: пикселей на метр на глубине вратаря (как у модели), картинка — 300 единиц на метр
       const ppm = mpx * (body ? body.scale : 1), sc = ppm / GOALIE_UPM;
       ctx.fillStyle = 'rgba(20,40,70,.28)'; ctx.beginPath(); ctx.ellipse(cx, baseY, 0.75 * ppm, 0.07 * ppm, 0, 0, 7); ctx.fill();
-      if (imgReady(img)) ctx.drawImage(img, cx - M.ax * sc, baseY - M.ay * sc, M.w * sc, M.h * sc);
+      // при сейве рукой — небольшой наклон всем телом к шайбе (не больше 25 см), чтобы перчатка легла на точку
+      let lean = 0;
+      if (reach) { const [gx] = GOALIE_HANDS[pose][hand]; lean = Math.max(-0.25 * ppm, Math.min(0.25 * ppm, reach.x - (cx + gx * ppm))); }
+      if (imgReady(img)) ctx.drawImage(img, cx + lean - M.ax * sc, baseY - M.ay * sc, M.w * sc, M.h * sc);
       if (partShift) for (const p of sil.filter(q => q.id === partShift.id)) {
         ctx.setLineDash([5 * dpr, 4 * dpr]); ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 2 * dpr;
         ctx.beginPath(); p.pts.forEach((q, i) => { const pp = toPx(q.u + partShift.u, q.v + partShift.v); i ? ctx.lineTo(pp.x, pp.y) : ctx.moveTo(pp.x, pp.y); }); ctx.closePath(); ctx.stroke();
