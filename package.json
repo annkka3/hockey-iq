@@ -1,0 +1,15 @@
+{
+  "name": "hockey-iq",
+  "private": true,
+  "type": "module",
+  "description": "Тренажёр хоккейного мышления (PWA). Сборки нет — статические файлы; package.json нужен только для тестов.",
+  "scripts": {
+    "test": "node tests/unit.mjs && node tests/e2e.mjs",
+    "test:unit": "node tests/unit.mjs",
+    "test:e2e": "node tests/e2e.mjs",
+    "build:content": "python3 tools/build_content.py --strict"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}
