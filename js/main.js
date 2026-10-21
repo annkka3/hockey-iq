@@ -12,6 +12,7 @@ import * as soon from './modules/soon.js';
 import * as shot from './modules/shot.js';
 import * as react from './modules/react.js';
 import * as cards from './modules/cards.js';
+import * as vision from './modules/vision.js';
 
 const TABS = [
   ['today', 'Сегодня'], ['decks', 'Решения'], ['shot', 'Бросок'], ['react', 'Реакция'], ['me', 'Я'],
@@ -44,11 +45,12 @@ function render() {
   else if (r === 'react') f.react ? react.render(view, rerender) : soon.render(view, 'react');
   else if (r === 'me') me.render(view, rerender, cloud);
   else if (r === 'parent') parent.render(view, rerender);
+  else if (r === 'vision') vision.renderRoute(view, rerender, location.hash.replace(/^#\/?/, '').split('/')[1] || null); // видеоэпизоды (вход — из «Решений» и «Моих моментов»)
   else today.render(view, rerender);
 
   // Плавающая панель: «пилюля» переезжает под активную вкладку из прежнего положения
   const nav = h('nav.tabs');
-  const active = r === 'parent' ? 'me' : r;
+  const active = r === 'parent' ? 'me' : r === 'vision' ? 'decks' : r;
   const idx = Math.max(0, TABS.findIndex(([id]) => id === active));
   const pill = h('i.nav-pill', { style: { '--i': lastTab } });
   nav.append(pill);

@@ -6,8 +6,8 @@ const VERSION = 'v31';
 const PREFIX = 'hk-shell-';
 const CACHE = PREFIX + VERSION;
 const CORE = [
-  './', 'index.html', 'config.js', 'store.js', 'manifest.webmanifest', 'css/style.css',
-  'js/main.js', 'js/ui.js', 'js/content.js',
+  './', 'index.html', 'config.js', 'store.js', 'manifest.webmanifest', 'css/style.css', 'css/shot.css', 'css/drills.css', 'css/eyes.css', 'css/catalog.css', 'css/vision.css',
+  'js/main.js', 'js/ui.js', 'js/content.js', 'js/core/fx.js', 'js/modules/vision.js', 'js/core/media.js',
   'js/core/state.js', 'js/core/sync.js',
   'js/engine/rink.js', 'js/engine/render.js', 'js/engine/anim.js', 'js/engine/srs.js', 'js/engine/scoring.js', 'js/engine/shot.js', 'js/engine/sim.js', 'js/engine/pov.js', 'js/engine/sprites.js', 'js/engine/stick.js',
   'js/modules/today.js', 'js/modules/decks.js', 'js/modules/play.js', 'js/modules/me.js', 'js/modules/parent.js', 'js/modules/soon.js', 'js/modules/shot.js', 'js/modules/react.js', 'js/modules/editor.js', 'js/modules/film.js', 'js/modules/cards.js', 'js/modules/links.js', 'js/modules/povui.js', 'js/modules/program.js', 'js/modules/onice.js',

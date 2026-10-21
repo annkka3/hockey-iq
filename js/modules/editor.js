@@ -5,6 +5,7 @@ import { Scene } from '../engine/render.js';
 import { lib, syncMine } from '../content.js';
 import { state, saveCard, deleteCard } from '../core/state.js';
 import { play } from './play.js';
+import { momentVideo, openEpisode, releaseMedia } from './vision.js';
 
 const PALETTE = [
   { k: 'me', label: 'Я', team: 'us', role: 'C', me: true },
@@ -19,11 +20,12 @@ export function list(view, rerender) {
   const mine = Object.values(state.cards || {});
   view.append(h('div.h2', `Мои моменты · ${mine.length}`),
     h('div.panel',
-      h('p.muted.small', { style: { marginTop: 0 } }, 'Эпизоды из его матчей: расставьте игроков, задайте вопрос и варианты. Карточки попадут в колоду «Мои моменты» и в тренировку дня.'),
+      h('p.muted.small', { style: { marginTop: 0 } }, 'Эпизоды из его матчей: расставьте игроков, задайте вопрос и варианты. Карточки попадут в колоду «Мои моменты» и в тренировку дня. К моменту можно прикрепить видео матча и отметить ключевую секунду — его можно будет смотреть как видеоэпизод.'),
       mine.length ? h('div.list', mine.map(c => h('div.li',
         h('span', c.title),
         h('span.row', { style: { gap: '6px' } },
           h('button.btn.small', { onclick: () => play([c.id], { preview: true }) }, 'Смотреть'),
+          c.video && c.video.mediaId && c.video.at != null ? h('button.btn.small', { onclick: () => openEpisode('m:' + c.id, { onClose: rerender }) }, 'Видео') : null,
           h('button.btn.small', { onclick: () => edit(c, rerender) }, 'Править'))))) : null,
       h('button.btn.primary.small', { style: { marginTop: '12px' }, onclick: () => edit(null, rerender) }, 'Новый момент')));
 }
@@ -42,7 +44,15 @@ function edit(card, rerender) {
   const c = card ? JSON.parse(JSON.stringify(card)) : blankCard();
   const root = h('div.play'), inner = h('div.play-in');
   root.appendChild(inner); document.body.appendChild(root); document.body.style.overflow = 'hidden';
-  const close = () => { root.remove(); document.body.style.overflow = ''; rerender(); };
+  // видео, прикреплённое в этой правке, но не сохранённое, — убрать с устройства
+  const origMedia = card && card.video ? card.video.mediaId : null;
+  let vid = null, saved = false;
+  const close = () => {
+    if (vid) vid.destroy();
+    const m = c.video && c.video.mediaId;
+    if (!saved && m && m !== origMedia) releaseMedia(m, null, c.id);
+    root.remove(); document.body.style.overflow = ''; rerender();
+  };
   let tool = 'me', setMove = null, sel = null;
 
   const rinkBox = h('div.rink-wrap');
@@ -124,11 +134,14 @@ function edit(card, rerender) {
     if (!c.question.text.trim()) errs.push('вопрос');
     if (c.options.some(o => !o.label.trim() || !o.explain.trim())) errs.push('тексты вариантов и разборы');
     if (c.options.filter(o => o.verdict === 'best').length !== 1) errs.push('одно лучшее решение');
+    if (c.video && c.video.mediaId && c.video.at == null) errs.push('ключевую секунду видео (или уберите видео)');
     if (errs.length) { toast('Заполните: ' + errs.join(', ')); return; }
     c.version = (card ? card.version : 0) + 1;
     if (!c.track) c.track = 'read';
     saveCard(c);
     syncMine(state.cards);
+    saved = true;
+    if (origMedia && (!c.video || c.video.mediaId !== origMedia)) releaseMedia(origMedia, null, c.id);
     toast('Сохранено'); close();
   };
 
@@ -141,8 +154,9 @@ function edit(card, rerender) {
     h('div.row', h('label.field.grow', h('span', 'Фаза'), phase), h('label.field.grow', h('span', 'Принцип'), princ)),
     (lib.program ? h('label.field', h('span', 'Блок программы U15'), h('select.input', { onchange: e => { c.track = e.target.value; } }, lib.program.tracks.map(t => h('option', { value: t.id, selected: t.id === (c.track || 'read') }, t.name)))) : null),
     h('div.h2', 'Варианты'), optsBox,
+    h('div.h2', 'Видео матча'), (vid = momentVideo(c)),
     h('div.row', { style: { marginTop: '16px' } },
-      card ? h('button.btn.ghost.small', { style: { color: 'var(--bad)' }, onclick: () => { deleteCard(c.id); syncMine(state.cards); toast('Удалено'); close(); } }, 'Удалить') : null,
+      card ? h('button.btn.ghost.small', { style: { color: 'var(--bad)' }, onclick: () => { const m = c.video && c.video.mediaId; deleteCard(c.id); syncMine(state.cards); saved = true; if (m) releaseMedia(m, null, c.id); if (origMedia && origMedia !== m) releaseMedia(origMedia, null, c.id); toast('Удалено'); close(); } }, 'Удалить') : null,
       h('button.btn.primary.grow', { onclick: save }, 'Сохранить')));
   redraw(); drawOpts();
 }

@@ -1,1 +1,50 @@
-/* vision — стили этого раздела */
+/* vision — видеоэпизоды (Hockey Vision) и видео в «Моих моментах» */
+.vis-frame { position: relative; margin-top: 10px; }
+.vis-stage { position: relative; border-radius: 18px; overflow: hidden; background: #000;
+  box-shadow: 0 0 40px -10px rgba(63, 215, 255, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.06); }
+.vis-video { display: block; width: 100%; max-height: 56vh; aspect-ratio: 16 / 9; object-fit: contain; background: #000; }
+.vis-marks { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.vis-marks.drawing { pointer-events: auto; cursor: crosshair; touch-action: none; }
+.vis-mark { fill: rgba(51, 200, 234, 0.12); stroke: #33C8EA; stroke-width: 0.7; stroke-linecap: round;
+  filter: drop-shadow(0 0 1.2px rgba(4, 8, 14, 0.9)); }
+line.vis-mark { fill: none; stroke-width: 0.8; }
+.vis-mark.faint { opacity: 0.5; }
+.vis-phase { position: absolute; left: 12px; top: 12px; z-index: 2; pointer-events: none;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: #fff;
+  background: rgba(4, 8, 14, 0.72); padding: 6px 10px; border-radius: 99px; border: 1px solid var(--stroke-hi); }
+.vis-phase.stop { color: var(--cyan); box-shadow: 0 0 16px rgba(63, 215, 255, 0.45); }
+.vis-phase.after { color: var(--ok); }
+.vis-phase.review { color: var(--good); }
+.vis-big-play { position: absolute; inset: 0; margin: auto; width: max-content; height: 56px; padding: 0 22px; z-index: 3;
+  border-radius: 99px; border: 1px solid var(--stroke-hi); background: rgba(4, 8, 14, 0.78); color: #fff;
+  font-family: var(--display); font-weight: 800; font-size: 16px; letter-spacing: 0.04em; cursor: pointer; }
+.vis-sound { min-width: 44px; }
+.vis-panel { margin-top: 4px; }
+.vis-panel .q { margin-top: 12px; }
+
+/* редактор: скраббер и отметки времени */
+.vis-edit-video { margin: 8px 0 12px; }
+.vis-scrub { margin-top: 10px; display: grid; gap: 8px; }
+.vis-range { width: 100%; height: 36px; accent-color: var(--cyan); touch-action: pan-y; }
+.vis-range::-webkit-slider-thumb { width: 28px; height: 28px; }
+.vis-ctrl { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.vis-ctrl .btn { padding: 0 6px; min-height: 44px; }
+.vis-pp { font-size: 16px; }
+.vis-time { font-family: var(--display); font-size: 13px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+.vis-times { display: grid; gap: 8px; }
+.vis-tm { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; padding: 8px 10px;
+  border-radius: 12px; background: rgba(120, 200, 255, 0.05); border: 1px solid var(--stroke); font-size: 14px; }
+.vis-tm > span { color: var(--muted); font-weight: 700; }
+.vis-tm-v { font-family: var(--display); font-size: 14px; color: var(--cyan); background: none; border: none; cursor: pointer;
+  font-variant-numeric: tabular-nums; padding: 6px; }
+.vis-check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--muted); }
+.vis-check input { margin-top: 3px; accent-color: var(--cyan); }
+.vis-usage { margin-top: 12px; }
+
+/* вкладка */
+.vis-li { align-items: center; }
+.vis-li-t { display: grid; gap: 2px; min-width: 0; }
+.vis-li-t b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vis-li-t small { color: var(--muted); font-size: 12px; }
+.vis-moment { margin-top: 4px; }
+@media (max-width: 380px) { .vis-ctrl .btn { font-size: 12px; } .vis-tm { grid-template-columns: 1fr auto auto; } }
