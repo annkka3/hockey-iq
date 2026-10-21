@@ -26,6 +26,7 @@ export function povSwitch(wrap, scene, { force = null } = {}) {
   const on = () => {
     if (pov) return;
     pov = new Pov(wrap, scene);
+    window.__hkPov = pov; // для автопроверок
     wrap.classList.add('pov-on');
     mini.append(scene.svg);           // та же схема — мини-картой справа от кнопок
     bar.after(row);

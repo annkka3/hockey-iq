@@ -1,5 +1,6 @@
 /* Раздел для родителей (под PIN): активность, точность, застрявшие ситуации, сообщение, цель недели,
    ревью карточек. В командной версии тот же экран открывается по роли опекуна, без PIN. */
+import { attentionPanel } from './react.js';
 import { h, meter, toast, icon, fmtSec } from '../ui.js';
 import { lib, parseKey, keysOf } from '../content.js';
 import { state, setParent, resetAll } from '../core/state.js';
@@ -77,6 +78,7 @@ function dashboard(view, rerender) {
         h('div', { style: { fontFamily: 'var(--display)', fontWeight: 800, fontSize: '22px', color: 'var(--cyan)' } }, Math.round(rr.rate * 100) + '%')),
       meter(rr.rate), h('div.muted.small', { style: { marginTop: '6px' } }, `${rr.ok} из ${rr.n}`)));
   }
+  { const ap = attentionPanel(state.sessions); if (ap) view.append(ap); }
   const acc = accuracyBy(state.sessions, 'principle');
   const accRows = lib.principles.filter(p => acc[p.id]).sort((a, b) => acc[a.id].rate - acc[b.id].rate);
   view.append(h('div.h2', 'Принципы: слабые сверху'),

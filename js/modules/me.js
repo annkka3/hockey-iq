@@ -1,4 +1,5 @@
 /* «Я»: звание, статистика по принципам и фазам, настройки, аккаунт, вход для родителей. */
+import { attentionPanel } from './react.js';
 import { h, meter, svg, toast } from '../ui.js';
 import { lib } from '../content.js';
 import { state, setProfile } from '../core/state.js';
@@ -34,6 +35,7 @@ export function render(view, rerender, cloud) {
         h('div', { style: { fontFamily: 'var(--display)', fontWeight: 800, fontSize: '22px', color: 'var(--cyan)' } }, Math.round(rr.rate * 100) + '%')),
       meter(rr.rate), h('div.muted.small', { style: { marginTop: '6px' } }, `${rr.ok} из ${rr.n}`)));
   }
+  { const ap = attentionPanel(state.sessions); if (ap) view.append(ap); }
   onice.playerPanel(view, rerender);
 
   // Контрольный срез: незнакомые ситуации без подсказок раз в 4 недели

@@ -5,7 +5,7 @@
    (хват), согнуты ли колени. Над головой — подпись амплуа, как на схеме.
    Источник правды — Scene: позиции, направление корпуса и хват берутся из её сущностей каждый кадр. */
 import { fromScreen } from './rink.js';
-import { gripSprite, goalieImage, ownStickImage, arenaImage, META, ready, preload } from './sprites.js';
+import { gripSprite, goalieImage, goaliePoseImage, GOALIE_UPM, ownStickImage, arenaImage, META, ready, preload } from './sprites.js';
 import { stickPose, toWorld, STICK } from './stick.js';
 
 const EYE = 1.6, PITCH = 0.11, FOV = 80 * Math.PI / 180, NEAR = 0.35;
@@ -33,6 +33,7 @@ export class Pov {
     this._resize = () => this.fit();
     window.addEventListener('resize', this._resize);
     this.bindDrag();
+    this.onPick = id => { if (this.scene.onPick) this.scene.onPick(id); }; // ответ касанием задаёт экран решения
     this.live = true;
     const loop = () => { if (!this.live) return; if (!this.cv.isConnected && this._drawn) { this.destroy(); return; } this.draw(); this._drawn = true; requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
@@ -45,17 +46,37 @@ export class Pov {
   }
 
   bindDrag() {
-    let x0 = null, h0 = 0;
+    let x0 = null, h0 = 0, y0 = 0, t0 = 0, moved = false;
     this.cv.style.touchAction = 'none';
-    this.cv.addEventListener('pointerdown', e => { x0 = e.clientX; h0 = this.heading ?? 0; this.cv.setPointerCapture(e.pointerId); });
+    this.cv.addEventListener('pointerdown', e => { x0 = e.clientX; y0 = e.clientY; t0 = performance.now(); moved = false; h0 = this.heading ?? 0; this.cv.setPointerCapture(e.pointerId); });
     this.cv.addEventListener('pointermove', e => {
       if (x0 == null) return;
       const dx = e.clientX - x0;
+      if (Math.abs(dx) > 6 || Math.abs(e.clientY - y0) > 6) moved = true;
       if (Math.abs(dx) > 3) { this.follow = false; this.heading = h0 - dx / this.cv.clientWidth * FOV; if (this.onTurn) this.onTurn(); }
     });
-    const up = () => { x0 = null; };
+    const up = e => {
+      // короткое касание без сдвига — выбор игрока на сцене (ответ касанием), а не поворот головы
+      if (x0 != null && !moved && performance.now() - t0 < 500 && e.type === 'pointerup' && this.onPick) {
+        const id = this.hitTest(e.clientX, e.clientY);
+        if (id) { this.heading = h0; this.onPick(id); }
+      }
+      x0 = null;
+    };
     this.cv.addEventListener('pointerup', up); this.cv.addEventListener('pointercancel', up);
     this.cv.addEventListener('dblclick', () => { this.heading = null; }); // двойное касание — вернуть взгляд по корпусу
+  }
+
+  /* Кто на сцене под точкой экрана (client px): по прямоугольникам фигур последнего кадра, ближний к камере. */
+  hitTest(cx, cy) {
+    const r = this.cv.getBoundingClientRect();
+    const x = (cx - r.left) * this.cv.width / r.width, y = (cy - r.top) * this.cv.height / r.height;
+    let best = null;
+    for (const b of this.boxes || []) {
+      const pad = 6 * this.dpr;
+      if (x >= b.x0 - pad && x <= b.x1 + pad && y >= b.y0 - pad && y <= b.y1 + pad && (!best || b.d < best.d)) best = b;
+    }
+    return best ? best.id : null;
   }
 
   /* Плечевой осмотр: быстрый поворот головы в сторону (−1 налево, +1 направо) и обратно, по времени, а не по кадрам. */
@@ -230,6 +251,7 @@ export class Pov {
     }
     items.sort((a, b) => b.d - a.d);
     const labels = [], seenNow = [];
+    this.boxes = []; this.pickable = this.scene.pickable || null; this.picked = this.scene.picked || null;
     for (const it of items) {
       if (it.goal) { drawGoal(...it.goal, f / it.d); continue; }
       const foot = P(it.p.x, it.p.y, 0);
@@ -271,9 +293,11 @@ export class Pov {
   drawPlayer(it, P, f, me) {
     const ctx = this.ctx, dpr = this.dpr, p = it.p, en = it.e;
     let fw = en.faceW || { x: 0, y: en.team === 'us' ? 1 : -1 };
+    const pkW = this.world('puck');
     if (en.goalie) {
-      // вратарь всегда лицом к площадке: от своих ворот, а не к сетке
+      // вратарь лицом к шайбе, но всегда к площадке: от своих ворот, а не к сетке
       const out = p.y < this.r.L / 2 ? 1 : -1;
+      if (pkW) { const dx = pkW.x - p.x, dy = pkW.y - p.y, l = Math.hypot(dx, dy) || 1; fw = { x: dx / l, y: dy / l }; }
       if (fw.y * out < 0.25) fw = { x: fw.x * 0.5, y: out };
     }
     const fx = fw.x, fy = fw.y, lx = -fy, ly = fx;
@@ -287,10 +311,26 @@ export class Pov {
     // тень под коньками
     ctx.fillStyle = 'rgba(30,60,90,.22)'; ctx.beginPath(); ctx.ellipse(foot.x, foot.y, 0.55 * k, 0.14 * k, 0, 0, 7); ctx.fill();
     if (en.goalie) {
-      const img = goalieImage(team, cosA < 0), M = META.goalie;
-      const hpx = 1.6 * k, sc = hpx / M.h;
+      // позы — те же рисунки, что в броске (300 единиц = 1 м, коньки в (320, 588)): стойка, разворот к шайбе
+      // под острым углом справа или слева, «бабочка», когда шайба на пятаке.
+      // Синие позы есть только в стойке спереди и сзади; со спины — тоже стойка.
+      const M = META.goalie, out = p.y < this.r.L / 2 ? 1 : -1;
+      let pose = 'stand', img, H = 1.5;
+      if (pkW && cosA > 0) {
+        const gx = pkW.x - p.x, gy = (pkW.y - p.y) * out, ang = Math.atan2(Math.abs(gx), Math.max(0.01, gy)) * 180 / Math.PI;
+        const pkS = P(pkW.x, pkW.y, 0), right = pkS ? pkS.x > foot.x : gx > 0;
+        if (gy > 0 && gy < 4.5 && Math.abs(gx) < 3) pose = 'butterfly';
+        else if (right && ang > 55) pose = 'q3r2';
+        else if (right && ang > 28) pose = 'q3r';
+        else if (!right && ang > 28) pose = 'q3l';
+      }
+      if (team === 'them' && cosA > 0) { img = goaliePoseImage(pose); if (pose === 'butterfly') H = 1.05; }
+      else img = goalieImage(team, cosA < 0);
+      const sc = team === 'them' && cosA > 0 ? k / GOALIE_UPM : (1.6 * k) / M.h;
       if (ready(img)) ctx.drawImage(img, foot.x - M.ax * sc, foot.y - M.ay * sc, M.w * sc, M.h * sc);
-      return { x: foot.x, y: foot.y - hpx * 0.95, text: 'ВР', color: team === 'us' ? '#0F2D52' : '#D8263C', size: k };
+      this.boxes.push({ id: it.id, x0: foot.x - 0.6 * k, x1: foot.x + 0.6 * k, y0: foot.y - H * k, y1: foot.y, d: it.d });
+      this.goaliePose = pose;
+      return { x: foot.x, y: foot.y - H * k * 1.02, text: 'ВР', color: team === 'us' ? '#0F2D52' : '#D8263C', size: k };
     }
     // скорость по смене позиции между кадрами: едет — шаг катания вместо стойки боком
     const now = performance.now(), prev = (this.prevPos ||= {})[it.id];
@@ -298,7 +338,7 @@ export class Pov {
     this.prevPos[it.id] = { x: p.x, y: p.y, t: now };
     const view = cosA > 0.82 ? 'front' : cosA > 0.3 ? 'q3front' : cosA > -0.3 ? (spd > 1.2 ? 'stride' : 'side') : cosA > -0.82 ? 'q3back' : 'back';
     const faceLeft = ahead ? ahead.x < foot.x : false;
-    const gs = gripSprite(team, view, hand, faceLeft, en.stickPose && en.stickPose.action), img = gs.img, mirror = gs.mirror, M = META.skater;
+    const gs = gripSprite(team, view, hand, faceLeft, en.stickPose && en.stickPose.action, spd < 3), img = gs.img, mirror = gs.mirror, M = META.skater;
     const hpx = 1.85 * k, sc = hpx / M.h; // рост в шлеме ~1,75 м (фигура 560 из 600 единиц холста)
     const toScr = ([gx, gy]) => ({ x: foot.x + (mirror ? M.ax - gx : gx - M.ax) * sc, y: foot.y + (gy - M.ay) * sc });
     // клюшка — модель (en.stickPose, как на схеме) + руки картинки: древко — прямая через верхнюю и нижнюю руку,
@@ -340,6 +380,13 @@ export class Pov {
       ctx.restore();
     }
     if (!behind) stick();
+    this.boxes.push({ id: it.id, x0: foot.x - 0.5 * k, x1: foot.x + 0.5 * k, y0: foot.y - 1.85 * k, y1: foot.y, d: it.d });
+    if ((this.pickable && this.pickable.has(it.id)) || this.picked === it.id) {
+      // кого можно выбрать касанием — пунктирное кольцо под ногами; выбранный — сплошное
+      ctx.save(); ctx.strokeStyle = this.picked === it.id ? '#33C8EA' : 'rgba(51,200,234,.8)'; ctx.lineWidth = (this.picked === it.id ? 3.5 : 2) * dpr;
+      if (this.picked !== it.id) ctx.setLineDash([5 * dpr, 4 * dpr]);
+      ctx.beginPath(); ctx.ellipse(foot.x, foot.y, 0.7 * k, 0.2 * k, 0, 0, 7); ctx.stroke(); ctx.restore();
+    }
     const lb = en.node.querySelector('text'), txt = lb ? lb.textContent : '';
     return txt ? { x: foot.x, y: foot.y - hpx * 0.98, text: txt, color: team === 'us' ? '#0F2D52' : '#D8263C', size: k } : null;
   }

@@ -73,21 +73,58 @@ export function toBody(w, p, fw) {
   return { f: dx * fx + dy * fy, l: -dx * fy + dy * fx };
 }
 
-/* Действие игрока по карточке: у кого шайба — ведение; к кому идёт первая передача в ответах — приём
-   (крюк лицом к шайбе). Позиции — мировые (м), map — перевод точки карточки в мир. */
+/* Действие игрока в стоп-кадре по карточке (позиции — мировые, м; map — точка карточки → мир).
+   Порядок: явное e.action (ready|carry|receive|pass|shot|block) → у кого шайба (carry) → приём (receive) → перекрытие (block) → готовность.
+   Приём ставится, только если ВСЕ варианты ответа начинаются с одной и той же передачи этому игроку
+   (это часть ситуации, а не ответ): иначе поза клюшки подсказывала бы правильный вариант.
+   Перекрытие: игрок без шайбы стоит рядом с владельцем (клюшка на шайбу) или у линии передачи от владельца
+   к партнёру — крюк ставится в эту линию. Возвращает { action, from?, target? } (from/target — мир). */
+export const ACT = { carry: 1.3, receive: 2.5, pressure: 2.4, lane: 1.9 };
 export function actionOf(e, card, p, puck, map = q => q) {
-  if (e.action) return { action: e.action };
-  if (puck && Math.hypot(puck.x - p.x, puck.y - p.y) < 1.3) return { action: 'carry' };
-  const opts = (card && card.options) || [];
-  const ordered = [...opts.filter(o => o.verdict === 'best'), ...opts.filter(o => o.verdict !== 'best')];
-  for (const o of ordered) {
-    const mv = (o.moves || []).find(m => m.who === 'puck' && m.kind === 'pass');
-    if (!mv) continue;
-    const t = map({ x: mv.to[0], y: mv.to[1] });
-    if (Math.hypot(t.x - p.x, t.y - p.y) < 2.5 && puck) return { action: 'receive', from: puck };
-    break;
+  if (e.action) return { action: e.action }; // явное действие из карточки; точка крюка — её stick
+  if (!puck) return { action: 'ready' };
+  const dP = Math.hypot(puck.x - p.x, puck.y - p.y);
+  if (dP < ACT.carry) return { action: 'carry' };
+  // приём: общая первая передача всех вариантов
+  const firsts = ((card && card.options) || []).map(o => (o.moves || []).find(m => m.who === 'puck'))
+    .filter(Boolean);
+  if (firsts.length && firsts.every(m => (m.kind || 'pass') === 'pass')) {
+    const t0 = map({ x: firsts[0].to[0], y: firsts[0].to[1] });
+    const same = firsts.every(m => { const t = map({ x: m.to[0], y: m.to[1] }); return Math.hypot(t.x - t0.x, t.y - t0.y) < 1.5; });
+    if (same && Math.hypot(t0.x - p.x, t0.y - p.y) < ACT.receive) return { action: 'receive', from: puck };
   }
-  return { action: 'ready' };
+  if (e.role === 'G' || !card) return { action: 'ready' };
+  // команда игрока и владелец шайбы
+  const all = [...(card.us || []).map(x => ({ ...x, team: 'us' })), ...(card.them || []).map(x => ({ ...x, team: 'them' }))]
+    .filter(x => x.role !== 'G').map(x => ({ ...x, w: map({ x: x.x, y: x.y }) }));
+  const mine = all.find(x => x.id === e.id);
+  let holder = null, hd = 1.6;
+  for (const x of all) { const k = Math.hypot(x.w.x - puck.x, x.w.y - puck.y); if (k < hd) { hd = k; holder = x; } }
+  if (!holder || !mine || holder.team === mine.team) return { action: 'ready' };
+  // на шайбу клюшку ставит один — ближайший к ней игрок команды
+  const nearest = all.filter(o => o.team === mine.team).every(o => o.id === mine.id || Math.hypot(o.w.x - puck.x, o.w.y - puck.y) >= dP);
+  if (dP < ACT.pressure && nearest) return { action: 'block', target: puck };
+  if (dP < ACT.pressure) return { action: 'ready' };
+  // расстояние точки до линии передачи владелец → m (или null, если не между ними)
+  const laneDist = (pt, m) => {
+    const ax = puck.x, ay = puck.y, vx = m.w.x - ax, vy = m.w.y - ay, LL = vx * vx + vy * vy || 1;
+    const t = ((pt.x - ax) * vx + (pt.y - ay) * vy) / LL;
+    if (t < 0.15 || t > 0.9) return null;
+    const q = { x: ax + vx * t, y: ay + vy * t };
+    return { k: Math.hypot(pt.x - q.x, pt.y - q.y), q };
+  };
+  let best = null, bd = ACT.lane;
+  for (const m of all) {
+    if (m.team !== holder.team || m.id === holder.id) continue;
+    const r = laneDist(p, m);
+    if (!r || r.k >= bd) continue;
+    // каждую линию перекрывает один — ближайший к ней игрок команды (остальные держат своих)
+    const closer = all.some(o => o.team === mine.team && o.id !== mine.id && o.role !== 'G'
+      && (() => { const ro = laneDist(o.w, m); return ro && ro.k < r.k; })());
+    if (closer) continue;
+    bd = r.k; best = r.q;
+  }
+  return best ? { action: 'block', target: best } : { action: 'ready' };
 }
 
 function norm(a) { const L = Math.hypot(a.f, a.l) || 1; return v(a.f / L, a.l / L); }

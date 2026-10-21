@@ -3,13 +3,22 @@
    — ближайший соперник закрывает дистанцию с владельцем шайбы (при хорошем решении опаздывает);
    — второй соперник смещается в линию паса к открытому партнёру;
    — партнёр без шайбы уезжает в свободное место (поддержка);
-   — вратарь смещается за шайбой.
+   — вратарь смещается за шайбой;
+   — соперник у линии паса ставит в неё клюшку (крюк в линии, а не в погоне);
+   — защитник соперника пятится, держа дистанцию с владельцем (гэп) между ним и своими воротами;
+   — в нашей зоне второй форчекер заходит под углом со стороны центра, прижимая владельца к борту;
+   — у своих ворот свободный соперник смыкается на пятак со стороны шайбы.
    Работает в авторских координатах карточки (метры, атака вверх), сам «Я» не двигается —
    его ход уже сделан выбором. Возвращает ходы в формате Scene.play(). */
 
 const W = 30, L = 60, R = 8.5;
 const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const REACH = 4.5; // м — сколько игрок успевает проехать за окно реакции (~0,3 с задержки + 0,7 с хода)
+const GAP = 4;      // м — дистанция, которую защитник держит с владельцем, отъезжая к своим воротам
+const BACK = 3;     // м — сколько защитник успевает отъехать спиной вперёд за то же окно (медленнее, чем лицом)
+const ANGLE = 1.6;  // м — смещение форчекера к центру от владельца: заход «снаружи внутрь», к борту
+const SLOT = 3.5;   // м — расстояние от линии ворот, где смыкается защита у пятака
+const LANE = 2.2;   // м — дальше этого от линии паса соперник клюшку в неё не дотянет (≈ рука + клюшка + шаг)
 /* Ближайшая к p точка отрезка a→b (линия передачи). */
 const onSegment = (p, a, b) => {
   const vx = b.x - a.x, vy = b.y - a.y, L = vx * vx + vy * vy || 1;
@@ -92,7 +101,33 @@ export function respond(card, moveLists, verdict) {
     const targets = [helper, meId].filter(id => id && id !== carrier && pos[id]);
     const openness = id => Math.min(...skaters('them').map(o => d(pos[o], pos[id])));
     const target = targets.sort((a, b) => openness(b) - openness(a))[0];
-    if (opp[1] && target) push(opp[1], approach(pos[opp[1]], onSegment(pos[opp[1]], P, pos[target]), 0.3, REACH));
+    if (opp[1] && target) {
+      const q = onSegment(pos[opp[1]], P, pos[target]);
+      const to = approach(pos[opp[1]], q, 0.3, REACH) || pos[opp[1]];
+      // успел к линии — крюк в неё (клюшкой, а не телом)
+      const still = d(to, pos[opp[1]]) <= 0.6, inLane = d(to, q) < LANE;
+      if (still && inLane) out.push({ who: opp[1], to: [to.x, to.y], kind: 'skate', stick: [q.x, q.y] }); // уже стоит — только клюшка
+      else push(opp[1], to, inLane ? { stick: [q.x, q.y] } : {});
+    }
+    const goalThem = { x: 0, y: 56 }; // ворота соперника (мы атакуем вверх)
+    const rest = opp.slice(2);
+    // 4. гэп: соперник между владельцем и своими воротами отъезжает, держа дистанцию GAP
+    const backer = rest.find(id => pos[id].y > P.y + 1 && d(pos[id], P) < GAP + BACK);
+    if (backer) {
+      const D = d(P, goalThem) || 1, k = Math.min(1, GAP / D);
+      const want = clampIce({ x: P.x + (goalThem.x - P.x) * k, y: P.y + (goalThem.y - P.y) * k });
+      push(backer, approach(pos[backer], want, 0.2, BACK));
+    }
+    // 5. форчек в нашей зоне: следующий соперник заходит со стороны центра, прижимая к борту
+    const f2 = rest.find(id => id !== backer);
+    if (P.y < 22.86 && f2) {
+      const side = P.x >= 0 ? -1 : 1; // со стороны центра площадки
+      push(f2, approach(pos[f2], clampIce({ x: P.x + side * ANGLE, y: P.y + 1 }), 0.4, REACH));
+    } else if (P.y > 44 && f2) {
+      // 6. у своих ворот: смыкание на пятак со стороны шайбы
+      const slot = clampIce({ x: Math.sign(P.x) * 1.2, y: 56 - SLOT });
+      push(f2, approach(pos[f2], slot, 0.3, REACH));
+    }
   } else if (carrier && team[carrier] === 'them') {
     // защита: наш ближайший свободный игрок прижимает владельца
     const ours = near(pos[carrier], skaters('us'));

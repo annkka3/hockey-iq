@@ -111,6 +111,30 @@ export function goalAngle(S) {
 
 export const flightTime = (S, target, speedMs) => Math.hypot(target.u - S.x, GOAL.y - S.y, target.v) / speedMs;
 
+/* Баллистика: шайба вылетает со льда и летит по дуге (сила тяжести, без сопротивления воздуха).
+   Угол вылета подбирается так, чтобы на расстоянии D (по льду до линии ворот) шайба была на высоте прицела H.
+   Из двух решений берётся пологое (бросок, а не «свечка»). Если на этой скорости так высоко не долететь —
+   шайба долетает только до наибольшей возможной высоты, а если и так не хватает — падает раньше и доезжает
+   по льду низом (weak). Броски до 15 см — по льду, без дуги. h(x) — высота на расстоянии x по льду. */
+export const G_ACC = 9.81;
+export function arc(S, target, speedMs) {
+  const D = Math.hypot(target.u - S.x, GOAL.y - S.y) || 0.01;
+  const V = Math.max(1, speedMs), a = G_ACC * D * D / (2 * V * V);
+  let H = Math.max(0, target.v), weak = false;
+  // низом (до 15 см): шайба скользит по льду или чуть над ним — без дуги
+  if (H <= 0.15) return { D, V, H, weak: false, slide: true, tan: H / D, theta: Math.atan(H / D), T: Math.hypot(D, H) / V, h: x => H * x / D, apex: H };
+  const Hmax = D * D / (4 * a) - a;
+  if (H > Hmax) { H = Math.max(0, Hmax); weak = true; }
+  const disc = Math.max(0, D * D - 4 * a * (a + H));
+  const tan = a < 1e-6 ? H / D : (D - Math.sqrt(disc)) / (2 * a);
+  const cos = 1 / Math.sqrt(1 + tan * tan);
+  const h = x => Math.max(0, x * tan - (a / (D * D)) * x * x * (1 + tan * tan));
+  return { D, V, H, weak, tan, theta: Math.atan(tan), T: D / (V * cos), h, apex: tan > 0 ? h(Math.min(D, tan * D * D / (2 * a * (1 + tan * tan)))) : 0 };
+}
+/* Где шайба «видна» в плоскости ворот для предмета на доле пути 1/scale: высота дуги там, спроецированная лучом
+   из точки броска (как и силуэты). Прямой полёт дал бы ровно target.v. */
+export const arcPoint = (ar, target, scale) => ({ u: target.u, v: ar.h(ar.D / Math.max(1, scale)) * Math.max(1, scale) });
+
 /* Рама ворот: штанги и перекладина — трубы радиусом POST_R, внутренний край — по створу 1,83 × 1,22.
    Шайба — диск радиусом PUCK_R. Гол только если шайба целиком проходит внутри рамы;
    задела трубу — «штанга»; дальше — мимо. Проверяется центр шайбы в плоскости ворот. */
@@ -128,21 +152,25 @@ export function frameHit(p) {
    goalie: { pos, stance, level, delay } — delay: доп. задержка (заслон, переезд после паса).
    shift: где силуэт вратаря в момент выпуска (для королевской дороги он ещё едет).
    others: силуэты защитников/заслона (не двигаются). */
-export function resolveShot({ S, target, speedMs, goalie, others = [], rng = Math.random }) {
-  const T = flightTime(S, target, speedMs);
-  const out = { T, target };
+export function resolveShot({ S, target: aimed, speedMs, goalie, others = [], rng = Math.random }) {
+  const ar = arc(S, aimed, speedMs);
+  const target = ar.weak ? { u: aimed.u, v: ar.H } : aimed;
+  const T = ar.T;
+  const out = { T, target, arc: ar, weak: ar.weak };
   const fr = frameHit(target);
   if (fr) return { ...out, result: fr };
-  for (const b of others) if (b.parts.some(p => inPoly(target, p.pts))) return { ...out, result: 'blocked', by: b.who };
+  // защитник и заслон: шайба на их глубине — на высоте дуги, а не на прямой
+  for (const b of others) if (b.parts.some(p => inPoly(arcPoint(ar, target, p.scale), p.pts))) return { ...out, result: 'blocked', by: b.who };
   const lvl = LEVELS[goalie.level] || LEVELS.pro;
   const reaction = lvl.reaction + (goalie.delay || 0) + (rng() - 0.5) * 0.06;
   const sil = goalie.sil;
-  if (sil.some(p => inPoly(target, p.pts))) return { ...out, result: 'save', reason: 'body', reaction };
+  if (!sil.length) return { ...out, result: 'goal', empty: true, reaction }; // пустые ворота
+  if (sil.some(p => inPoly(arcPoint(ar, target, p.scale), p.pts))) return { ...out, result: 'save', reason: 'body', reaction };
   let best = null;
   for (const p of sil) {
     // время до встречи шайбы с этой частью вратаря, а не до линии ворот: p.scale = (линия ворот − бросок) / (вратарь − бросок)
     const left = Math.max(0, T / Math.max(1, p.scale) - reaction);
-    const d = Math.max(0, polyDist(target, p.pts) - PUCK_R);
+    const d = Math.max(0, polyDist(arcPoint(ar, target, p.scale), p.pts) - PUCK_R);
     const reach = left * p.speed * lvl.move * p.scale;
     const margin = reach - d;
     if (!best || margin > best.margin) best = { part: p.id, d, reach, margin, left, tc: T / Math.max(1, p.scale) };
@@ -179,3 +207,20 @@ export function rngFrom(seed) {
 }
 
 export const kmh = ms => Math.round(ms * 3.6);
+
+/* Тип броска после передачи или отскока: в одно касание — выпуск сразу, но разброс больше;
+   после приёма — на обработку уходит время (вратарь успевает сместиться), зато точнее. */
+export const SHOT_TYPES = {
+  onetimer: { name: 'в одно касание', scatter: 1.35, handle: 0 },
+  received: { name: 'после приёма', scatter: 0.8, handle: 0.18 },
+};
+export const ONE_TIMER_WINDOW = 0.15; // с после прихода шайбы — ещё «в касание»
+
+/* Отскок после первого броска: направление зависит от того, во что попала шайба.
+   dir — куда летит от вратаря (x — вбок к стороне части, y — от ворот), speed — м/с. Ловушка шайбу держит. */
+export const REBOUND = {
+  padL: { name: 'от левого щитка', side: -1, out: 0.55, speed: 6.5 },
+  padR: { name: 'от правого щитка', side: 1, out: 0.55, speed: 6.5 },
+  body: { name: 'от корпуса', side: 0, out: 1, speed: 3.5 },
+  blocker: { name: 'от блина', side: -1, out: 0.35, speed: 8 },
+};

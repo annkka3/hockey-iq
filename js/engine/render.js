@@ -163,7 +163,7 @@ export class Scene {
   }
 
   /* Повернуть корпус: вектор взгляда (мир) → угол SVG. Крюк: к точке stick или на сторону хвата перед собой. */
-  orient(id, f, stickWorld = null) {
+  orient(id, f, stickWorld = null, forced = null) {
     const en = this.ents[id];
     if (!en || !en.rot) return;
     const L = Math.hypot(f.x, f.y) || 1, fx = f.x / L, fy = f.y / L;
@@ -176,12 +176,15 @@ export class Scene {
     }
     // клюшка — из общей модели (js/engine/stick.js): та же поза, что в виде «Глазами».
     // На схеме фишка крупнее реального игрока, поэтому вся поза клюшки масштабирована вместе с фишкой (K).
-    const me = fromScreen(en.home, this.rink), fw = { x: fx, y: fy };
-    let contact = null;
-    if (stickWorld) { const w = mapPoint({ x: stickWorld[0], y: stickWorld[1] }, this.rink); contact = toBody(w, me, fw); }
-    const pk = this.ents.puck ? fromScreen(this.ents.puck.home || this.ents.puck.pos, this.rink) : null;
-    const act = actionOf(en.data, this.card, me, pk, q => mapPoint(q, this.rink));
+    const me = fromScreen(en.pos, this.rink), fw = { x: fx, y: fy };
+    const pk = this.ents.puck ? fromScreen(this.ents.puck.pos, this.rink) : null;
+    // действие: заданное ходом (пас, бросок, приём во время анимации) или из стоп-кадра карточки
+    const act = forced || actionOf(en.data, this.card, me, pk, q => mapPoint(q, this.rink));
+    en.act = act;
     const action = act.action;
+    let contact = null;
+    if (stickWorld && !forced) { const w = mapPoint({ x: stickWorld[0], y: stickWorld[1] }, this.rink); contact = toBody(w, me, fw); }
+    else if (act.target) contact = toBody(act.target, me, fw);
     if (!contact && action === 'carry' && pk) contact = toBody(pk, me, fw);
     const toward = act.from ? toBody(act.from, me, fw) : null;
     const sp = stickPose({ hand, action, contact, toward });
@@ -199,6 +202,13 @@ export class Scene {
     // перчатки: верхняя рука — у торца, нижняя — на древке
     en.gloves.top.setAttribute('cx', X(sp.knob)); en.gloves.top.setAttribute('cy', Y(sp.knob));
     en.gloves.bottom.setAttribute('cx', X(sp.bottom)); en.gloves.bottom.setAttribute('cy', Y(sp.bottom));
+  }
+
+  /* Сменить действие игрока (клюшка), не трогая направление корпуса. act = { action, from?, target? } (мир) или null — по карточке. */
+  setAction(id, act) {
+    const en = this.ents[id];
+    if (!en || !en.rot || en.goalie || !en.faceW) return;
+    this.orient(id, en.faceW, null, act);
   }
 
   /* Хват: у «Я» — из профиля, у остальных — из карточки (hand), иначе устойчиво по id: ~60 % левшей, как в российском и канадском хоккее. */
@@ -329,6 +339,16 @@ export class Scene {
     const puck = this.ents.puck;
     const carry = mv.carry && puck;
     if (e.rot && kind === 'skate' && len > 0.8) this.orient(mv.who, { x: b.x - a.x, y: -(b.y - a.y) }); // корпус по ходу движения
+    // клюшки во время передачи/броска: отдающий — пас/бросок, получатель — крюк навстречу, после — ведение
+    let passer = null, catcher = null;
+    if (mv.who === 'puck' && (kind === 'pass' || kind === 'shot')) {
+      passer = this.nearestSkater(a, 1.8);
+      if (kind === 'pass') catcher = this.nearestSkater(b, 2.6, passer);
+      const wa = fromScreen(a, this.rink), wb = fromScreen(b, this.rink);
+      if (passer) this.setAction(passer, { action: kind === 'shot' ? 'shot' : 'pass', target: wa });
+      if (catcher) this.setAction(catcher, { action: 'receive', from: wa });
+      void wb;
+    }
     const dur = !this.animOn ? 0 : kind === 'skate' ? Math.max(500, len * 90) : kind === 'shot' ? 380 : Math.max(320, len * 35);
     if (kind === 'skate') {
       const L = Math.hypot(ex - a.x, ey - a.y);
@@ -343,6 +363,21 @@ export class Scene {
       if (carry) this.place('puck', { x: p.x + 0.7, y: p.y - 0.7 });
     }, kind === 'skate' ? ease.inOut : ease.out);
     if (kind === 'skate') line.style.strokeDasharray = '';
+    if (passer) this.setAction(passer, { action: 'ready' });
+    if (catcher) this.setAction(catcher, { action: 'carry' });
+    if (mv.stick && e.rot) this.setAction(mv.who, { action: 'block', target: mapPoint({ x: mv.stick[0], y: mv.stick[1] }, this.rink) }); // клюшка в линию паса
+  }
+
+  /* Ближайший полевой к точке экрана (в пределах r), кроме except. */
+  nearestSkater(pt, r, except = null) {
+    let best = null, bd = r;
+    for (const id in this.ents) {
+      const en = this.ents[id];
+      if (!en.rot || en.goalie || id === except) continue;
+      const k = Math.hypot(en.pos.x - pt.x, en.pos.y - pt.y);
+      if (k < bd) { bd = k; best = id; }
+    }
+    return best;
   }
 
   /* Закрепить текущую расстановку как новый стоп-кадр (после показа продолжения в «Предскажи»). */
@@ -354,7 +389,8 @@ export class Scene {
   /* Вернуть стоп-кадр (перед показом лучшего варианта). */
   reset() {
     this.clearArrows();
-    for (const id in this.ents) { const en = this.ents[id]; this.place(id, en.home); if (en.rot && en.homeFace) this.orient(id, en.homeFace, en.homeStick); }
+    for (const id in this.ents) this.place(id, this.ents[id].home);
+    for (const id in this.ents) { const en = this.ents[id]; if (en.rot && en.homeFace) this.orient(id, en.homeFace, en.homeStick); }
   }
 
   destroy() { if (this.onDestroy) this.onDestroy(); this.offTap(); this.svg.remove(); }

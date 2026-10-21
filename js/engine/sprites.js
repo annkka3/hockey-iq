@@ -52,17 +52,25 @@ export const GRIPS = {
   'side-receive-gL': { top: [135, 280], bottom: [150, 360] },
   'side-receive-gR': { top: [160, 310], bottom: [200, 375] },
   'front-receive-gL': { top: [205, 260], bottom: [320, 375] },
+  // пас, бросок, перехват (крюк в линии паса): сбоку в обоих хватах, перехват — ещё и спереди
+  'side-pass-gL': { top: [400, 262], bottom: [157, 391] },
+  'side-pass-gR': { top: [216, 298], bottom: [56, 391] },
+  'side-shot-gL': { top: [482, 217], bottom: [258, 374] },
+  'side-shot-gR': { top: [347, 217], bottom: [112, 374] },
+  'side-block-gL': { top: [378, 262], bottom: [78, 427] },
+  'side-block-gR': { top: [336, 247], bottom: [22, 427] },
+  'front-block-gL': { top: [179, 236], bottom: [336, 427] },
 };
 /* Какая картинка нужна игроку с хватом hand в ракурсе view, смотрящему влево (faceLeft) или вправо. */
-export function gripSprite(team, view, hand, faceLeft, action = 'ready') {
+export function gripSprite(team, view, hand, faceLeft, action = 'ready', slow = true) {
   const t = team === 'us' ? 'us' : 'them', other = hand === 'L' ? 'R' : 'L';
-  // поза под действие, если для этого ракурса она нарисована (пока — приём сбоку и спереди)
-  const act = action === 'receive' && (view === 'side' || view === 'front') ? '-receive' : '';
-  let key, mirror;
-  if (view === 'front' || view === 'back') { key = view + act + '-gL'; mirror = hand === 'R'; }
-  else if (faceLeft) { key = view + act + '-g' + hand; mirror = false; }
-  else { key = view + act + '-g' + other; mirror = true; }
-  if (!GRIPS[key] && act) return gripSprite(team, view, hand, faceLeft);
+  // поза под действие, если для этого ракурса она нарисована; в катании медленно — поза действия сбоку
+  const ACT = { receive: '-receive', pass: '-pass', shot: '-shot', block: '-block' };
+  let v = view, act = ACT[action] || '';
+  if (act && v === 'stride' && slow) v = 'side';
+  const keyOf = (vv, a) => (vv === 'front' || vv === 'back') ? vv + a + '-gL' : vv + a + '-g' + (faceLeft ? hand : other);
+  if (act && !GRIPS[keyOf(v, act)]) { v = view; act = ''; }
+  let key = keyOf(v, act), mirror = (v === 'front' || v === 'back') ? hand === 'R' : !faceLeft;
   if (!GRIPS[key]) { key = 'back-gL'; mirror = hand === 'R'; }
   return { img: load(`skater-${t}-${key}`), mirror, ...GRIPS[key] };
 }
@@ -84,9 +92,10 @@ export function skaterImage(team, view) {
 /* Вратарь целиком для броска — набор поз в одном масштабе: 300 единиц = 1 м, кадр 640 × 600, коньки в (320, 588).
    Ловушка во всех позах — на его левой руке (справа для смотрящего); зеркалить нельзя.
    stand — стойка, butterfly — бабочка, glove / blocker — сейв ловушкой / блином, q3r и q3r2 — развёрнут к броску
-   справа (умеренно / сильно), pushR — толчок вправо, padL — щиток выброшен влево по льду. */
+   справа (умеренно / сильно), q3l — к броску слева, pushR / pushL — толчок вправо / влево,
+   padL / padR — щиток выброшен влево / вправо по льду. */
 export const GOALIE_UPM = 300;
-export const GOALIE_POSES = ['stand', 'butterfly', 'glove', 'blocker', 'q3r', 'q3r2', 'pushR', 'padL', 'pushL', 'padR'];
+export const GOALIE_POSES = ['stand', 'butterfly', 'glove', 'blocker', 'q3r', 'q3r2', 'pushR', 'padL', 'pushL', 'padR', 'q3l'];
 /* Где в каждой позе ловушка и блин: метры от точки между коньками (вправо для смотрящего, вверх). */
 export const GOALIE_HANDS = {
   stand: { glove: [0.44, 0.86], blocker: [-0.45, 0.72] },
@@ -99,6 +108,7 @@ export const GOALIE_HANDS = {
   padL: { glove: [0.53, 0.85], blocker: [-0.38, 0.48] },
   pushL: { glove: [0.47, 0.76], blocker: [-0.53, 0.63] },
   padR: { glove: [0.5, 0.89], blocker: [-0.53, 0.69] },
+  q3l: { glove: [0.45, 0.93], blocker: [-0.5, 0.89] }, // развёрнут к броску слева для смотрящего
 };
 export function goaliePoseImage(pose) { return load('goalie-pose-' + (GOALIE_POSES.includes(pose) ? pose : 'stand')); }
 export function goalieImage(team, back) {

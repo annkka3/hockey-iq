@@ -6,7 +6,7 @@ import { cancelAll, tween } from '../engine/anim.js';
 import { lib, parseKey, verdictOf, explainOf, bestOf } from '../content.js';
 import { state, answer, startSession, logItem, logTouch, finishSession } from '../core/state.js';
 import { itemPoints, summarize, fastAndSure } from '../engine/scoring.js';
-import { respond } from '../engine/sim.js';
+import { respond, positions } from '../engine/sim.js';
 import { povSwitch } from './povui.js';
 import { similar, filmFor, SHOT_FOR, DRILL_FOR, SHOT_NAME, DRILL_NAME } from './links.js';
 import * as film from './film.js';
@@ -161,7 +161,7 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
     };
 
     if (card.question.kind === 'choice') {
-      const box = h('div.opts');
+      const box = h('div.opts'), btnOf = new Map();
       // порядок вариантов каждый раз новый: нельзя выучить «первая кнопка — правильная»
       shuffle([...card.options]).forEach((o, k) => {
         const b = h('button.opt', { 'data-k': LETTERS[k], onclick: () => {
@@ -172,8 +172,10 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
           decide(o);
         } }, o.label);
         box.append(b);
+        btnOf.set(o, b);
       });
       zone.append(box);
+      tapToAnswer(card, btnOf, zone);
     } else {
       const hint = h('div.tap-hint', 'Нажми, куда поедешь');
       wrap.append(hint);
@@ -195,6 +197,54 @@ export function play(keys, { module = 'decks', preview = false, onDone, timer = 
         decide(o, { tap: [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10] });
       });
     }
+  }
+
+  /* Ответ касанием: если варианты — передачи разным партнёрам, партнёра можно выбрать прямо на сцене
+     (в виде «Глазами» или на схеме). Касание нажимает ту же кнопку варианта — подсчёт и разбор те же. */
+  function tapToAnswer(card, btnOf, zone) {
+    const map = new Map();
+    const meId = ((card.us || []).find(e => e.me) || {}).id;
+    const usIds = new Set((card.us || []).filter(e => e.role !== 'G' && !e.me).map(e => e.id));
+    const dup = new Set();
+    for (const o of card.options || []) {
+      const moves = o.moves || [], k = moves.findIndex(m => m.who === 'puck');
+      if (k < 0 || (moves[k].kind || 'pass') !== 'pass') continue;
+      // где партнёры к моменту передачи (с учётом ходов варианта до неё) — ближайший к точке паса и есть адресат
+      let e2 = k + 1; while (e2 < moves.length && moves[e2].with) e2++; // партнёр, который едет под этот пас одновременно с ним
+      const { pos } = positions(card, [card.read ? card.read.reveal : [], [...moves.slice(0, k), ...moves.slice(k + 1, e2)]]);
+      const t = { x: moves[k].to[0], y: moves[k].to[1] };
+      let id = null, bd = 3.5;
+      for (const u of usIds) { const q = pos[u]; if (!q) continue; const dd = Math.hypot(q.x - t.x, q.y - t.y); if (dd < bd) { bd = dd; id = u; } }
+      if (!id || id === meId) continue;
+      if (map.has(id)) dup.add(id); else map.set(id, o);
+    }
+    dup.forEach(id => map.delete(id));
+    if (!map.size) return;
+    const nodes = [];
+    const pick = id => {
+      const o = map.get(id);
+      if (!o) return;
+      scene.picked = id;
+      nodes.forEach(([nid, n]) => n.classList.toggle('picked', nid === id));
+      const b = btnOf.get(o);
+      if (b && !b.closest('.locked')) b.click();
+      off();
+    };
+    const off = () => { scene.pickable = null; scene.onPick = null; nodes.forEach(([, n]) => { n.classList.remove('pickable'); n.removeEventListener('click', n._pick); }); hint.remove(); };
+    scene.pickable = new Set(map.keys());
+    scene.onPick = pick;
+    for (const id of map.keys()) {
+      const n = scene.ents[id] && scene.ents[id].node;
+      if (!n) continue;
+      n.classList.add('pickable');
+      n._pick = e => { e.stopPropagation(); pick(id); };
+      n.addEventListener('click', n._pick);
+      nodes.push([id, n]);
+    }
+    const hint = h('p.tap-pick', 'Можно ткнуть в партнёра на сцене');
+    zone.prepend(hint);
+    // ответ кнопкой — касание больше не нужно
+    btnOf.forEach(b => b.addEventListener('click', () => { if (scene.pickable) { scene.pickable = null; scene.onPick = null; hint.remove(); } }));
   }
 
   function askWhy(why) {

@@ -688,3 +688,30 @@ input.power::-webkit-slider-thumb { width: 30px; height: 30px; border: 3px solid
 .rink-wrap.rink-full .zoom-btn, .rink-wrap.rink-full.pov-on .zoom-btn { position: fixed; top: calc(12px + var(--safe-t)); right: 12px; bottom: auto; left: auto; z-index: 90; width: 48px; height: 48px; border-radius: 14px; font-size: 22px; background: rgba(9,24,39,.92); border-color: #33C8EA; }
 .rink-wrap.rink-full.pov-on { flex-direction: column; }
 .rink-wrap.rink-full .pov-cv { width: 100%; max-height: 100%; }
+
+/* Тренажёры внимания: линии паса, «без торможения», статистика внимания */
+.lane { fill: none; stroke: #0FA968; stroke-width: 0.2; stroke-dasharray: 0.6 0.4; stroke-linecap: round; opacity: 0.55; }
+.lane.lane-ok { opacity: 1; stroke-width: 0.26; }
+.lane.lane-bad { stroke: #E2283E; opacity: 0.9; }
+.a-ghost { stroke: var(--navy); stroke-width: 0.14; stroke-dasharray: 0.3 0.3; opacity: 0.45; }
+.attn-line { margin-top: 10px; font-size: 13px; color: var(--muted); }
+.attn-kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+.attn-kv b { display: block; font-family: var(--display); font-size: 20px; }
+.attn-kv span { font-size: 12px; color: var(--muted); }
+.attn-trend { display: flex; align-items: flex-end; gap: 4px; height: 44px; margin-top: 12px; }
+.attn-trend i { flex: 1; max-width: 22px; background: var(--cyan); border-radius: 3px 3px 0 0; opacity: 0.75; min-height: 3px; }
+.attn-trend i.fs { background: #FF4D6A; }
+.attn-note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+/* ответ касанием: партнёр, которого можно выбрать на схеме, и выбранный */
+.ent.pickable { cursor: pointer; }
+.ent.pickable .body { stroke: #33C8EA; stroke-width: 0.12; stroke-dasharray: 0.25 0.18; }
+.ent.picked .body { stroke: #33C8EA; stroke-width: 0.18; stroke-dasharray: none; }
+.tap-pick { margin: 0 0 8px; font-size: 13px; color: var(--cyan, #33C8EA); }
+
+/* бросок: кнопка момента выпуска в динамических режимах, метка выпуска, доп. разбор */
+.shot-go.release { font-size: 17px; letter-spacing: .02em; }
+.shot-go.release.hold { transform: scale(.97); box-shadow: 0 0 0 4px rgba(51,200,234,.35), 0 0 22px rgba(51,200,234,.55); }
+.mini-map .rel-mark { fill: none; stroke: #FFC53D; stroke-width: .22; }
+.shot-extra { margin: 8px 0 0; padding-left: 18px; font-size: 13.5px; line-height: 1.45; color: var(--muted, #9FB3C8); }
+.shot-extra li { margin: 3px 0; }
